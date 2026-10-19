@@ -1,0 +1,158 @@
+<aside class="chapter-meta">
+  <h2 class="chapter-meta__title">Chapter info</h2>
+  <ul class="chapter-meta__list">
+    <li><strong>Estimated time</strong> 55 minutes</li>
+    <li><strong>Difficulty</strong> ★★★☆☆</li>
+    <li><strong>What you'll learn</strong> Schema, rowid, constraint checking, swappable storage interfaces</li>
+    <li><strong>What you'll build</strong> <code>src/schema.js</code>, <code>src/table.js</code>, <code>src/storage/memory.js</code>, <code>src/database.js</code></li>
+  </ul>
+</aside>
+
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Chapter 05 / Storage layer</p>
+    <h1>Where data lives: schema, table, and storage backend</h1>
+    <p class="chapter-lead">
+      The parser turns <code>CREATE TABLE</code> into an AST, but the AST only records what the user wrote.
+      This chapter turns it into the structures the runtime actually uses: a table's columns, constraints, and rows.
+      We also abstract "where the data lives" behind an interface, so the same engine can run in memory or on disk.
+    </p>
+  </header>
+
+  <h2 id="schema">Schema: turning the AST into rules</h2>
+  <p>
+    <code>buildTableSchema()</code> takes the AST of a <code>CREATE TABLE</code> and produces a
+    <strong>schema</strong>. It does more than copy columns — it rejects obvious errors up front:
+  </p>
+  <ul>
+    <li>Duplicate column names (case-insensitive).</li>
+    <li><code>PRIMARY KEY</code> declared twice.</li>
+    <li>A table-level constraint points at a column that doesn't exist.</li>
+    <li><code>DEFAULT</code> isn't a constant (we only support constant defaults).</li>
+  </ul>
+  <p>Each column looks like this:</p>
+  <pre class="code"><code>{
+  name: "price",
+  type: "REAL",
+  affinity: "REAL",       // decided by affinityOf in values.js
+  notNull: false,
+  primaryKey: false,
+  unique: false,
+  defaultExpr: null,
+  defaultValue: 0         // precomputed constant
+}</code></pre>
+  <p>
+    Why keep <code>defaultExpr</code> and also compute a <code>defaultValue</code>?
+    The first is "what the user wrote" (useful for debugging and for .schema); the second is "the value
+    actually used". This "source form + resolved form" pattern is common in compilers.
+  </p>
+
+  <!-- include src/schema.js step=05 title="src/schema.js" -->
+
+  <h2 id="rowid">How is a row represented?</h2>
+  <p>
+    A row is a plain object whose keys are column names, plus a hidden <code>__rowid</code>:
+  </p>
+  <pre class="code"><code>{ __rowid: 1, id: 1, title: "JavaScript", price: 320 }</code></pre>
+  <p>
+    <code>__rowid</code> starts at 1 and keeps increasing; deleted values are never reused. It's the stable way for
+    UPDATE / DELETE to address a row, and the basis for adding indexes later. Tables without a primary key still
+    have a rowid — that's SQLite's design, and it's convenient.
+  </p>
+
+  <h2 id="constraints">Constraints: the database's gatekeepers</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Constraint</th><th>Rule</th><th>Our implementation</th></tr></thead>
+      <tbody>
+        <tr><td><code>NOT NULL</code></td><td>Can't be NULL</td><td>Checked on write</td></tr>
+        <tr><td><code>PRIMARY KEY</code></td><td>Unique + not NULL</td><td>Treated as a UNIQUE + NOT NULL pair</td></tr>
+        <tr><td><code>UNIQUE</code></td><td>The whole value set must be distinct</td><td>NULLs allowed (SQL standard)</td></tr>
+        <tr><td><code>DEFAULT</code></td><td>Used when no value is given</td><td>Computed at CREATE TABLE time</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    UNIQUE checking currently scans row by row (O(n)). That gets slow with a lot of data — exactly why indexes
+    exist; we'll come back to this in chapter 9 when we discuss JOIN performance.
+  </p>
+  <div class="callout callout--note">
+    <p class="callout__title">Why does UNIQUE allow multiple NULLs?</p>
+    <p>
+      Because the SQL standard defines NULL as "unknown". Two unknowns aren't guaranteed to be equal, so they
+      shouldn't conflict. Many engineers find "a UNIQUE column can hold many NULLs" surprising the first time, but
+      it makes sense: if you don't know someone's email, you can't claim two unknown emails are duplicates.
+    </p>
+  </div>
+
+  <!-- include src/table.js step=05 title="src/table.js" -->
+
+  <h2 id="storage">Abstract "where data lives" into an interface</h2>
+  <p>
+    <code>Database</code> shouldn't know whether it runs in memory or on disk. So we define a tiny interface:
+  </p>
+  <pre class="code"><code>store.load()          // return the last saved snapshot, or null
+store.save(snapshot)  // write the whole database out
+store.close()         // clean up</code></pre>
+  <p>
+    <code>MemoryStore</code> just keeps the snapshot in a variable. Chapter 10's <code>DiskStore</code> uses exactly
+    the same interface to split the snapshot into pages and write them to a file. Defining the interface first and
+    swapping the implementation later keeps tests fast (in memory) while production still persists.
+  </p>
+
+  <!-- include src/storage/memory.js step=05 title="src/storage/memory.js" -->
+
+  <h2 id="database">Database: the public facade</h2>
+  <p>
+    <code>Database</code> collects all tables and is responsible for creating and dropping tables, exporting
+    snapshots, and restoring from them. It deliberately contains no SQL parsing or query execution — that's the next
+    chapter. The facade's benefit: users have a single entry point, and every internal module can be tested on its
+    own.
+  </p>
+
+  <!-- include src/database.js step=05 title="src/database.js" -->
+
+  <h2 id="snapshot">Snapshots: a database you can pass around</h2>
+  <p>
+    <code>snapshot()</code> returns a plain JSON-serializable object; <code>loadSnapshot()</code> rebuilds the
+    whole database from one. This isn't just for persistence — it's also the basis for <strong>transactions</strong>:
+    take a snapshot at <code>BEGIN</code> and restore it at <code>ROLLBACK</code>. Chapter 10 shows how this design
+    carries all the way to disk and the journal.
+  </p>
+
+  <div class="checkpoint">
+    <p class="checkpoint__title">Checkpoint — storage-layer tests</p>
+    <pre class="code"><code>node --test tests/schema.test.js tests/table.test.js tests/database.test.js</code></pre>
+    <p class="checkpoint__expect">ℹ tests 24
+ℹ pass 24
+ℹ fail 0</p>
+    <p>
+      You can also open <code>steps/05-storage</code> and run <code>node --test</code> directly to confirm that your
+      progress matches the reference implementation.
+    </p>
+  </div>
+
+  <h2 id="recap">Chapter recap</h2>
+  <ul>
+    <li>The schema is the AST's runtime form; it rejects duplicate columns and similar errors up front.</li>
+    <li>Each row is a plain object plus <code>__rowid</code>; constraints are checked in <code>Table</code>.</li>
+    <li>The storage backend has only three methods — load / save / close — so memory and disk are interchangeable.</li>
+    <li>Snapshots are both the save format and the basis for transaction rollback.</li>
+  </ul>
+
+  <div class="exercise">
+    <p class="exercise__title">Exercises</p>
+    <ol>
+      <li>Add a <code>CHECK (price &gt;= 0)</code> constraint: the parser must support it, the schema must preserve it, and Table must enforce it.</li>
+      <li>Change UNIQUE checking from a linear scan to a <code>Set</code> cache (remember to keep it in sync on update).</li>
+      <li>Make <code>snapshot()</code> also record which database version this is, and check it on load.</li>
+    </ol>
+  </div>
+
+  <h2 id="vocab">Chapter glossary</h2>
+  <dl class="vocab">
+    <dt>Schema</dt><dd>A table's structural definition: columns, types, constraints.</dd>
+    <dt>rowid</dt><dd>An internal number the database assigns to each row; not reused after deletion.</dd>
+    <dt>Facade</dt><dd>A design pattern that exposes a single entry point; <code>Database</code> is exactly that.</dd>
+  </dl>
+</article>

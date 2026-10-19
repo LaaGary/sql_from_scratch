@@ -1,0 +1,147 @@
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Appendix / Syntax reference</p>
+    <h1>SQL syntax and function reference</h1>
+    <p class="chapter-lead">
+      This reference lists the syntax, functions, error codes, and CLI commands that the engine in this
+      tutorial supports. If you add features of your own, remember to come back and update this page.
+    </p>
+  </header>
+
+  <h2 id="statements">Statements</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Syntax</th><th>Description</th><th>Chapter</th></tr></thead>
+      <tbody>
+        <tr><td><code>CREATE TABLE [IF NOT EXISTS] t (column ...)</code></td><td>Create a table</td><td>3 / 5</td></tr>
+        <tr><td><code>DROP TABLE [IF EXISTS] t</code></td><td>Drop a table</td><td>6</td></tr>
+        <tr><td><code>INSERT INTO t [(column...)] VALUES (...), (...)</code></td><td>Insert one or more rows</td><td>6</td></tr>
+        <tr><td><code>SELECT ...</code></td><td>Query</td><td>6 / 7 / 9</td></tr>
+        <tr><td><code>UPDATE t SET column = value, ... [WHERE ...]</code></td><td>Update rows</td><td>8</td></tr>
+        <tr><td><code>DELETE FROM t [WHERE ...]</code></td><td>Delete rows</td><td>8</td></tr>
+        <tr><td><code>BEGIN [TRANSACTION]</code></td><td>Start a transaction</td><td>10</td></tr>
+        <tr><td><code>COMMIT</code></td><td>Commit the transaction</td><td>10</td></tr>
+        <tr><td><code>ROLLBACK</code></td><td>Roll back the transaction</td><td>10</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="select">Full SELECT syntax</h2>
+  <pre class="code"><code>SELECT [DISTINCT] expression [AS alias], ...
+ [FROM table [AS alias]
+       [ [INNER | LEFT [OUTER]] JOIN table [AS alias] ON condition ] ...]
+ [WHERE condition]
+ [GROUP BY expression, ...]
+ [HAVING condition]
+ [ORDER BY expression [ASC | DESC], ...]
+ [LIMIT n [OFFSET m]]</code></pre>
+  <p>MySQL's <code>LIMIT offset, count</code> form is supported as well.</p>
+
+  <h2 id="columns">Column types and constraints</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Type</th><th>Affinity</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><code>INTEGER</code> / <code>INT</code> / <code>BIGINT</code></td><td>INTEGER</td><td><code>id INTEGER</code></td></tr>
+        <tr><td><code>REAL</code> / <code>DOUBLE</code> / <code>FLOAT</code> / <code>NUMERIC</code> / <code>DECIMAL</code></td><td>REAL</td><td><code>price REAL</code></td></tr>
+        <tr><td><code>TEXT</code> / <code>VARCHAR(n)</code> / <code>CHAR(n)</code></td><td>TEXT</td><td><code>title TEXT</code></td></tr>
+        <tr><td><code>BOOLEAN</code> / <code>BOOL</code></td><td>BOOLEAN</td><td><code>done BOOLEAN</code></td></tr>
+        <tr><td><code>BLOB</code></td><td>BLOB</td><td>not handled specially for now</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Column constraints: <code>PRIMARY KEY</code>, <code>NOT NULL</code>, <code>UNIQUE</code>, <code>DEFAULT constant</code>.
+  Table-level constraints are supported too: <code>PRIMARY KEY (a, b)</code>, <code>UNIQUE (a, b)</code>.</p>
+
+  <h2 id="operators">Operators and precedence</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Precedence (low → high)</th><th>Operators</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><code>OR</code></td></tr>
+        <tr><td>2</td><td><code>AND</code></td></tr>
+        <tr><td>3</td><td><code>NOT</code></td></tr>
+        <tr><td>4</td><td><code>=</code> <code>==</code> <code>!=</code> <code>&lt;&gt;</code> <code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code>, <code>IS [NOT] NULL</code>, <code>[NOT] LIKE</code>, <code>[NOT] IN</code>, <code>[NOT] BETWEEN</code></td></tr>
+        <tr><td>5</td><td><code>||</code></td></tr>
+        <tr><td>6</td><td><code>+</code> <code>-</code></td></tr>
+        <tr><td>7</td><td><code>*</code> <code>/</code> <code>%</code></td></tr>
+        <tr><td>8</td><td>unary <code>-</code> <code>+</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="functions">Functions</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Function</th><th>Description</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><code>COUNT(*)</code></td><td>number of rows</td><td><code>COUNT(*)</code></td></tr>
+        <tr><td><code>COUNT(x)</code> / <code>COUNT(DISTINCT x)</code></td><td>count of non-NULL values / count after deduplication</td><td><code>COUNT(DISTINCT author)</code></td></tr>
+        <tr><td><code>SUM(x)</code> / <code>AVG(x)</code></td><td>sum / average</td><td><code>SUM(price)</code></td></tr>
+        <tr><td><code>MIN(x)</code> / <code>MAX(x)</code></td><td>minimum / maximum</td><td><code>MAX(price)</code></td></tr>
+        <tr><td><code>UPPER(x)</code> / <code>LOWER(x)</code></td><td>case conversion</td><td><code>UPPER(name)</code></td></tr>
+        <tr><td><code>LENGTH(x)</code></td><td>string length</td><td><code>LENGTH(title)</code></td></tr>
+        <tr><td><code>TRIM(x)</code></td><td>strip leading and trailing whitespace</td><td><code>TRIM(name)</code></td></tr>
+        <tr><td><code>ABS(x)</code> / <code>ROUND(x, n)</code></td><td>absolute value / rounding</td><td><code>ROUND(price, 1)</code></td></tr>
+        <tr><td><code>COALESCE(a, b, ...)</code></td><td>first non-NULL value</td><td><code>COALESCE(nickname, name)</code></td></tr>
+        <tr><td><code>IFNULL(a, b)</code></td><td>use b if a is NULL</td><td><code>IFNULL(price, 0)</code></td></tr>
+        <tr><td><code>TYPEOF(x)</code></td><td>the value's type name</td><td><code>TYPEOF(price)</code></td></tr>
+        <tr><td><code>REPLACE(s, a, b)</code></td><td>string replacement</td><td><code>REPLACE(title, ' ', '-')</code></td></tr>
+        <tr><td><code>SUBSTR(s, start [, len])</code></td><td>substring (1-based)</td><td><code>SUBSTR(title, 1, 3)</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="errors">Error codes</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>SYNTAX_ERROR</code></td><td>Syntax error; <code>position</code> points at the offending location</td></tr>
+        <tr><td><code>SCHEMA_ERROR</code></td><td>Table or column doesn't exist, duplicate creation, bad constraint definition</td></tr>
+        <tr><td><code>UNKNOWN_COLUMN</code></td><td>Column not found; <code>hint</code> lists the available columns</td></tr>
+        <tr><td><code>AMBIGUOUS_COLUMN</code></td><td>Column name is ambiguous after a JOIN; add an alias</td></tr>
+        <tr><td><code>CONSTRAINT_ERROR</code></td><td>NOT NULL / UNIQUE / PRIMARY KEY violation</td></tr>
+        <tr><td><code>EXECUTION_ERROR</code></td><td>Type or function argument error</td></tr>
+        <tr><td><code>TRANSACTION_ERROR</code></td><td>Bad transaction state (BEGIN twice, COMMIT with no transaction)</td></tr>
+        <tr><td><code>NOT_SUPPORTED</code></td><td>Feature not implemented yet</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="cli">CLI commands</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Command</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>node bin/sql.js [file.db]</code></td><td>Open (or create) a database; uses memory when omitted</td></tr>
+        <tr><td><code>.help</code></td><td>Show command help</td></tr>
+        <tr><td><code>.tables</code></td><td>List all tables</td></tr>
+        <tr><td><code>.schema [table]</code></td><td>Show a table's schema</td></tr>
+        <tr><td><code>.mode table|json</code></td><td>Switch output format</td></tr>
+        <tr><td><code>.tokens &lt;SQL&gt;</code></td><td>Show tokens (for debugging)</td></tr>
+        <tr><td><code>.ast &lt;SQL&gt;</code></td><td>Show the syntax tree (for debugging)</td></tr>
+        <tr><td><code>.open &lt;file&gt;</code></td><td>Open another database file</td></tr>
+        <tr><td><code>.read &lt;file&gt;</code></td><td>Execute the SQL in a file</td></tr>
+        <tr><td><code>.exit</code> / <code>.quit</code></td><td>Quit</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="limits">Known limitations</h2>
+  <ul>
+    <li>No subqueries, <code>UNION</code>, <code>ALTER TABLE</code>, or window functions.</li>
+    <li><code>RIGHT JOIN</code> / <code>FULL JOIN</code> / <code>USING</code> / <code>NATURAL JOIN</code> are not implemented.</li>
+    <li>No indexes, so every query is a linear scan (JOIN is O(n×m)).</li>
+    <li>Single process; no locks or concurrency control.</li>
+    <li>Every commit rewrites all tables, which gets slow as the data grows.</li>
+  </ul>
+
+  <h2 id="next">Further exercises</h2>
+  <ol>
+    <li>Add indexes: start with a hash index on the primary key, then take on the B+tree.</li>
+    <li>Add <code>EXPLAIN</code>: print how a query will execute.</li>
+    <li>Add <code>VACUUM</code>: rewrite the file and reclaim free pages.</li>
+    <li>Package the core as an npm package, or build a web-based database editor.</li>
+  </ol>
+</article>

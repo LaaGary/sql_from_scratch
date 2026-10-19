@@ -1,0 +1,203 @@
+<aside class="chapter-meta">
+  <h2 class="chapter-meta__title">Chapter info</h2>
+  <ul class="chapter-meta__list">
+    <li><strong>Estimated time</strong> 70 minutes (the longest chapter)</li>
+    <li><strong>Difficulty</strong> ★★★★☆ First time we wire the whole pipeline together</li>
+    <li><strong>What you'll learn</strong> Query pipeline, expression evaluation, column resolution, result objects, CLI integration</li>
+    <li><strong>What you'll build</strong> <code>engine/expr.js</code>, <code>engine/query.js</code>, <code>engine/write.js</code>, <code>engine/executor.js</code>, <code>src/index.js</code>, and a new <code>bin/sql.js</code></li>
+  </ul>
+</aside>
+
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Chapter 06 / SELECT pipeline</p>
+    <h1>Your first real query: the SELECT execution pipeline</h1>
+    <p class="chapter-lead">
+      In the first five chapters we built tokens, a syntax tree, the value system, and tables — but we
+      still can't query anything. This chapter connects the last pieces: the expression evaluator, the
+      SELECT pipeline, write statements, and a CLI that can print tables. When you're done, you'll have a
+      SQL database you can actually use.
+    </p>
+  </header>
+
+  <h2 id="pipeline">The query pipeline: six stations of a SELECT</h2>
+  <pre class="code"><code>FROM     find the table, wrap each row as a "source list"
+JOIN     attach rows from other tables (Chapter 9)
+WHERE    keep only rows whose condition is TRUE
+GROUP BY group rows (Chapter 7)
+SELECT   compute the output columns
+DISTINCT drop duplicate output rows
+ORDER BY sort
+LIMIT    take the first n rows</code></pre>
+  <p>
+    The executor doesn't do all of this at once; it <strong>transforms the data one stage at a
+    time</strong>. This style (a simplified version of what database textbooks call the volcano model)
+    lets you test each stage on its own, and makes optimizations easy to insert later: for example,
+    adding a "look up a single row by primary key" shortcut right after FROM without touching any later
+    stage.
+  </p>
+
+  <h2 id="row">What does a "row" look like at runtime?</h2>
+  <p>
+    A row during query execution isn't a single object; it's a <strong>source list</strong>: each source
+    carries an alias, a table schema, and values. After a JOIN there are two or more sources, so we need
+    to remember which table each value came from.
+  </p>
+  <pre class="code"><code>[
+  { alias: "b", table: booksSchema,   values: { id: 1, title: "JS" } },
+  { alias: "a", table: authorsSchema, values: { id: 7, name: "Alice" } }
+]</code></pre>
+  <p>
+    Why not merge the two tables into one object? Because after a JOIN there are often columns with the
+    same name (both sides have <code>id</code>), and merging would clobber one of them. Only a source list
+    can tell <code>b.id</code> from <code>a.id</code>, and can report "add an alias" when a column name is
+    ambiguous.
+  </p>
+
+  <h2 id="expr">Expression evaluation: turning an AST into a value</h2>
+  <p>
+    The evaluator is one big <code>switch</code>: a literal returns itself, a column looks itself up in the
+    source list, a binary node dispatches on its operator, and a call invokes a function. A few
+    implementation details are worth noting:
+  </p>
+  <ul>
+    <li>
+      <strong>AND / OR must short-circuit</strong>: <code>FALSE AND x</code> doesn't need to evaluate x.
+      But because SQL has three-valued logic, the short-circuit rule has to account for UNKNOWN:
+      <code>NULL AND FALSE</code> is still FALSE.
+    </li>
+    <li>
+      <strong>NULL propagates through arithmetic</strong>: <code>NULL + 1</code> is NULL; division by zero
+      also returns NULL (rather than raising, which is SQLite's behavior).
+    </li>
+    <li>
+      <strong>Ambiguous column names must raise</strong>: if two sources have a same-named column and no
+      alias disambiguates them, <code>evaluateColumn</code> throws <code>AMBIGUOUS_COLUMN</code>.
+    </li>
+  </ul>
+
+  <!-- include src/engine/expr.js step=06 title="src/engine/expr.js" -->
+
+  <h2 id="query">Implementing the SELECT pipeline</h2>
+  <p>
+    <code>executeSelect</code> builds the sources, scans the table, then pushes every row through WHERE,
+    projection, DISTINCT, sorting, and LIMIT in that order. This version has no JOIN or grouping yet, so
+    those statements produce an explicit "added in Chapter 7 / 9" error — <strong>a good error message
+    tells you the next step</strong>, instead of just saying "not supported".
+  </p>
+
+  <!-- include src/engine/query.js step=06 title="src/engine/query.js" -->
+
+  <div class="callout callout--tip">
+    <p class="callout__title">Projection and ORDER BY aliases</p>
+    <p>
+      <code>SELECT price * 2 AS double_price ... ORDER BY double_price</code> is valid SQL. So when
+      sorting, first check whether the ORDER BY expression is an alias of an output column; only if it
+      isn't do we re-evaluate it against the source row. This small detail comes up again in Chapter 7
+      (sorting aggregates) and Chapter 9 (JOIN).
+    </p>
+  </div>
+
+  <h2 id="write">Write statements: CREATE / DROP / INSERT</h2>
+  <p>
+    Executing write statements is more direct: find the table, evaluate expressions into values, and call
+    methods on <code>Table</code>. <code>INSERT</code> handles both the case with a column list and the
+    case without one (schema order), and reports a clear error when the number of columns doesn't match.
+  </p>
+
+  <!-- include src/engine/write.js step=06 title="src/engine/write.js" -->
+
+  <h2 id="executor">Executor: dispatching the AST</h2>
+  <p>
+    This file is thin, but it's the single source of truth for which statements are supported. As each
+    chapter adds statements, you only add one case here.
+  </p>
+
+  <!-- include src/engine/executor.js step=06 title="src/engine/executor.js" -->
+
+  <h2 id="api">Public API: Database.exec()</h2>
+  <p>
+    We add <code>exec()</code> to <code>Database</code>: parse, execute statement by statement, and return
+    an array of results. Each statement takes a snapshot first and restores it on failure — that's
+    <strong>statement-level atomicity</strong>, and a preview of the transaction machinery in Chapter 10.
+  </p>
+  <p>
+    <code>src/index.js</code> is the entry point for external consumers. It deliberately exports only the
+    core and never touches the file system, so the same code can be bundled for the browser as-is.
+  </p>
+
+  <!-- include src/index.js step=06 title="src/index.js" -->
+
+  <h2 id="cli">CLI: printing results as a table</h2>
+  <p>
+    The new <code>bin/sql.js</code> parses user input, executes it, and prints the results. A few details
+    worth a look:
+  </p>
+  <ul>
+    <li><strong>Multi-line input</strong>: if the statement isn't complete yet (say a CREATE TABLE is missing a closing paren), the REPL keeps waiting for the next line.</li>
+    <li><strong>Full-width alignment</strong>: <code>displayWidth()</code> counts CJK characters as two cells so tables don't go crooked.</li>
+    <li><strong>Error format</strong>: <code>SqlError.format()</code> prints a caret pointing at the error position.</li>
+    <li><strong>Pipeline mode</strong>: <code>node bin/sql.js &lt; demo.sql</code> executes line by line, which is handy for scripts.</li>
+  </ul>
+
+  <!-- include bin/sql.js step=06 title="bin/sql.js" -->
+
+  <h2 id="demo">Try it: your first complete database</h2>
+  <p>Save the following as <code>demo.sql</code>:</p>
+  <pre class="code"><code>CREATE TABLE books (
+  id INTEGER PRIMARY KEY,
+  title TEXT NOT NULL,
+  author TEXT,
+  price REAL DEFAULT 0
+);
+
+INSERT INTO books (id, title, author, price) VALUES
+  (1, 'JavaScript: The Good Parts', 'Douglas Crockford', 320),
+  (2, 'Designing Data-Intensive Applications', 'Martin Kleppmann', 680),
+  (3, 'SQL Antipatterns', 'Bill Karwin', 450);
+
+SELECT id, title, price FROM books
+WHERE price &gt; 300
+ORDER BY price DESC LIMIT 5;</code></pre>
+  <p>Then run:</p>
+  <pre class="code"><code>node bin/sql.js &lt; demo.sql</code></pre>
+
+  <div class="checkpoint">
+    <p class="checkpoint__title">Checkpoint — you're really querying data</p>
+    <pre class="code"><code>Created table books (4 columns)
+Inserted 3 rows into books
+
+id  title                                  price
+--  -------------------------------------  -----
+2   Designing Data-Intensive Applications  680  
+3   SQL Antipatterns                       450  
+1   JavaScript: The Good Parts             320  
+(3 rows)
+</code></pre>
+    <p>Passing this step means the core of the engine is done. The chapters that follow add features on top of it.</p>
+  </div>
+
+  <h2 id="recap">Chapter recap</h2>
+  <ul>
+    <li>A query is a pipeline: scan → filter → project → deduplicate → sort → limit.</li>
+    <li>A "row" at runtime is a source list, which is what lets us handle JOINs and ambiguous columns.</li>
+    <li>Expression evaluation has to handle three-valued logic, NULL propagation, and type conversion.</li>
+    <li>Database.exec() provides statement-level atomicity; the CLI makes results look good.</li>
+  </ul>
+
+  <div class="exercise">
+    <p class="exercise__title">Exercises</p>
+    <ol>
+      <li>Add a <code>.mode csv</code> mode to the CLI that writes results as CSV.</li>
+      <li>Print the query's elapsed time in milliseconds (<code>performance.now()</code>) below the result table.</li>
+      <li>Think about it: if the WHERE condition is <code>id = 1</code>, can we avoid scanning the whole table? What data structure would that need?</li>
+    </ol>
+  </div>
+
+  <h2 id="vocab">Chapter glossary</h2>
+  <dl class="vocab">
+    <dt>Query pipeline</dt><dd>Breaking a query into stages that run in order, where each stage passes a stream of data to the next.</dd>
+    <dt>Projection</dt><dd>Deciding which columns to output, i.e. the SELECT list.</dd>
+    <dt>Short-circuit evaluation</dt><dd>AND / OR stop evaluating the other side once the result is determined.</dd>
+  </dl>
+</article>

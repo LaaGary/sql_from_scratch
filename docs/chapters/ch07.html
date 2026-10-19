@@ -1,0 +1,832 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chapter 7 · Aggregates and grouping — Building an SQL database engine from scratch</title>
+  <meta name="description" content="COUNT / SUM / AVG / MIN / MAX, grouping, HAVING, and caching of aggregate state.">
+  <meta property="og:title" content="Chapter 7 · Aggregates and grouping — Building an SQL database engine from scratch">
+  <meta property="og:description" content="COUNT / SUM / AVG / MIN / MAX, grouping, HAVING, and caching of aggregate state.">
+  <meta property="og:type" content="article">
+  <meta property="og:locale" content="en_US">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("sql-theme");
+        document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script defer src="../assets/toc.js"></script>
+  <script defer src="../assets/site.js"></script>
+</head>
+<body class="page page--chapter" data-page-kind="chapter"
+      data-prev-url="../chapters/ch06.html" data-next-url="../chapters/ch08.html">
+
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <div id="reading-progress" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="site-header__left">
+      <button id="sidebar-toggle" class="icon-btn" type="button"
+              aria-label="Open chapter navigation" aria-controls="sidebar" aria-expanded="false">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <path d="M2 4h12M2 8h12M2 12h12" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <a class="brand" href="../index.html">
+        <span class="brand__mark" aria-hidden="true">SQL</span>
+        <span class="brand__name">SQL from Scratch</span>
+      </a>
+      <span class="header-chapter">Chapter 7 · Aggregates and grouping</span>
+    </div>
+    <div class="site-header__right">
+      <span class="header-progress" data-progress-label>0/10 complete</span>
+      <button id="search-toggle" class="icon-btn icon-btn--search" type="button"
+              aria-label="Search chapters" aria-haspopup="dialog">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <span class="icon-btn__label">Search</span>
+        <span class="kbd-hint">/</span>
+      </button>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
+        <svg class="theme-icon theme-icon--sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="8" cy="8" r="3"/>
+          <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" stroke-linecap="round"/>
+        </svg>
+        <svg class="theme-icon theme-icon--moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M13.4 9.6A5.8 5.8 0 0 1 6.4 2.6a5.8 5.8 0 1 0 7 7Z" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <aside class="sidebar" id="sidebar" aria-label="Chapter navigation">
+    <div class="sidebar__scroll">
+      <p class="sidebar__heading">Chapter Index</p>
+      <ol class="toc-list"><li class="toc-item"><a class="toc-link" href="../chapters/ch01.html"><span class="toc-num">01</span><span class="toc-title">Orientation and skeleton</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch02.html"><span class="toc-num">02</span><span class="toc-title">Lexing</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch03.html"><span class="toc-num">03</span><span class="toc-title">Parsing</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch04.html"><span class="toc-num">04</span><span class="toc-title">Values and types</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch05.html"><span class="toc-num">05</span><span class="toc-title">Storage layer</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch06.html"><span class="toc-num">06</span><span class="toc-title">SELECT pipeline</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch07.html"><span class="toc-num">07</span><span class="toc-title">Aggregates and grouping</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch08.html"><span class="toc-num">08</span><span class="toc-title">Update and delete</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch09.html"><span class="toc-num">09</span><span class="toc-title">JOIN</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch10.html"><span class="toc-num">10</span><span class="toc-title">Persistence and transactions</span></a></li></ol>
+      <p class="sidebar__heading">Tools</p>
+      <nav class="nav-list" aria-label="Tools">
+        <a class="toc-link" href="../playground.html"><span class="toc-num">▸</span><span class="toc-title">SQL Playground</span></a>
+        <a class="toc-link" href="../reference.html"><span class="toc-num">▸</span><span class="toc-title">Syntax Reference</span></a>
+        <a class="toc-link" href="../index.html"><span class="toc-num">▸</span><span class="toc-title">Home &amp; Roadmap</span></a>
+      </nav>
+    </div>
+    <div class="sidebar__foot">
+      <a href="../index.html"><span>Home</span><span>⌂</span></a>
+      <a href="../playground.html"><span>Playground</span><span>⟩</span></a>
+      <a href="../reference.html"><span>Reference</span><span>⌗</span></a>
+      <p class="sidebar__version">SQL engine tutorial · 0.1<br>Zero dependencies · works offline</p>
+    </div>
+  </aside>
+  <div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
+
+  <main id="main" class="layout">
+    <div class="content-column">
+      <aside class="chapter-meta">
+  <h2 class="chapter-meta__title">Chapter info</h2>
+  <ul class="chapter-meta__list">
+    <li><strong>Estimated time</strong> 50 minutes</li>
+    <li><strong>Difficulty</strong> ★★★☆☆</li>
+    <li><strong>What you'll learn</strong> Aggregate functions, grouping, HAVING, aggregate state caching</li>
+    <li><strong>What you'll build</strong> <code>src/engine/aggregate.js</code>, changes to <code>engine/query.js</code></li>
+  </ul>
+</aside>
+
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Chapter 07 / Aggregates and grouping</p>
+    <h1>Turning many rows into one number: aggregates and GROUP BY</h1>
+    <p class="chapter-lead">
+      <code>SELECT COUNT(*) FROM books</code> returns a single row, and that row isn't any of the data
+      rows — it's a summary of the whole table. That's aggregation: compressing a set of rows into one
+      value. This chapter extends last chapter's query pipeline into two phases: group first, then
+      compute per group.
+    </p>
+  </header>
+
+  <h2 id="two-cases">Two cases: whole table and grouped</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Syntax</th><th>Semantics</th><th>Result row count</th></tr></thead>
+      <tbody>
+        <tr><td><code>SELECT COUNT(*) FROM books</code></td><td>the whole table is one group</td><td>1</td></tr>
+        <tr><td><code>SELECT author, COUNT(*) FROM books GROUP BY author</code></td><td>one group per author</td><td>number of authors</td></tr>
+        <tr><td><code>SELECT COUNT(*) FROM books WHERE id &gt; 99</code></td><td>no rows match, but there's still one group</td><td>1 (COUNT is 0)</td></tr>
+        <tr><td><code>SELECT author, COUNT(*) FROM books WHERE id &gt; 99 GROUP BY author</code></td><td>no groups at all</td><td>0</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    The last two rows are easy to get wrong. Without GROUP BY the whole table is always one group, even
+    if it contains no rows; with GROUP BY, no rows means no groups, so the result has zero rows. That
+    difference lives in <code>buildGroups()</code>: when <code>groupBy.length === 0</code> it pushes a
+    single group.
+  </p>
+
+  <h2 id="aggregate">Five aggregate functions</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Function</th><th>Meaning</th><th>Ignores NULL?</th><th>Empty set</th></tr></thead>
+      <tbody>
+        <tr><td><code>COUNT(*)</code></td><td>number of rows</td><td>no (counts every row)</td><td>0</td></tr>
+        <tr><td><code>COUNT(x)</code></td><td>number of non-NULL values</td><td>yes</td><td>0</td></tr>
+        <tr><td><code>SUM(x)</code></td><td>sum</td><td>yes</td><td>NULL</td></tr>
+        <tr><td><code>AVG(x)</code></td><td>average</td><td>yes</td><td>NULL</td></tr>
+        <tr><td><code>MIN(x)</code> / <code>MAX(x)</code></td><td>minimum / maximum</td><td>yes</td><td>NULL</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    <code>COUNT(DISTINCT author)</code> is supported too: deduplicate, then count. Deduplication uses
+    <code>groupKey()</code>, so the number 1 and the string '1' are not treated as the same value.
+  </p>
+
+  <div class="file"><div class="file__head"><span class="file__name">src/engine/aggregate.js</span><span class="file__meta">JavaScript · 94 lines · step 7</span></div><pre class="code"><code><span class="tk-com">/**
+ * Aggregate functions: COUNT / SUM / AVG / MIN / MAX
+ *
+ * The key difference from ordinary expressions: an aggregate looks at a whole group of rows, not a single row.
+ * So the SELECT pipeline groups first, then computes aggregate values per group.
+ *
+ * A simple cache is used here: the same aggregate expression is computed only once per group,
+ * even if it appears in SELECT, HAVING, and ORDER BY at the same time.
+ */</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">SqlError</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;../errors.js&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">evaluate</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;./expr.js&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">compareValues</span><span class="tk-op">,</span> <span class="tk-ident">displayValue</span><span class="tk-op">,</span> <span class="tk-ident">groupKey</span><span class="tk-op">,</span> <span class="tk-ident">isNull</span><span class="tk-op">,</span> <span class="tk-ident">toNumber</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;../values.js&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-com">/**
+ * Compute an aggregate function over the given set of rows.
+ * @param {object} call the call node from the AST
+ * @param {Array} rows all rows in this group
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">computeAggregate</span><span class="tk-op">(</span><span class="tk-ident">call</span><span class="tk-op">,</span> <span class="tk-ident">rows</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">name</span> <span class="tk-op">=</span> <span class="tk-ident">call</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">.</span><span class="tk-fn">toUpperCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">name</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;COUNT&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">call</span><span class="tk-op">.</span><span class="tk-ident">star</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">rows</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">;</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">values</span> <span class="tk-op">=</span> <span class="tk-fn">distinctIfNeeded</span><span class="tk-op">(</span><span class="tk-ident">call</span><span class="tk-op">,</span> <span class="tk-fn">aggregateValues</span><span class="tk-op">(</span><span class="tk-ident">call</span><span class="tk-op">,</span> <span class="tk-ident">rows</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-ident">values</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-kw">const</span> <span class="tk-ident">values</span> <span class="tk-op">=</span> <span class="tk-fn">distinctIfNeeded</span><span class="tk-op">(</span><span class="tk-ident">call</span><span class="tk-op">,</span> <span class="tk-fn">aggregateValues</span><span class="tk-op">(</span><span class="tk-ident">call</span><span class="tk-op">,</span> <span class="tk-ident">rows</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">values</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">null</span><span class="tk-op">;</span> <span class="tk-com">// with no non-NULL values, SUM/AVG/MIN/MAX are all NULL</span>
+
+  <span class="tk-kw">switch</span> <span class="tk-op">(</span><span class="tk-ident">name</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">case</span> <span class="tk-str">&quot;MIN&quot;</span><span class="tk-op">:</span>
+      <span class="tk-kw">return</span> <span class="tk-ident">values</span><span class="tk-op">.</span><span class="tk-fn">reduce</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">best</span><span class="tk-op">,</span> <span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">(</span><span class="tk-fn">compareValues</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">,</span> <span class="tk-ident">best</span><span class="tk-op">)</span> <span class="tk-op">&lt;</span> <span class="tk-num">0</span> <span class="tk-op">?</span> <span class="tk-ident">value</span> <span class="tk-op">:</span> <span class="tk-ident">best</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">case</span> <span class="tk-str">&quot;MAX&quot;</span><span class="tk-op">:</span>
+      <span class="tk-kw">return</span> <span class="tk-ident">values</span><span class="tk-op">.</span><span class="tk-fn">reduce</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">best</span><span class="tk-op">,</span> <span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">(</span><span class="tk-fn">compareValues</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">,</span> <span class="tk-ident">best</span><span class="tk-op">)</span> <span class="tk-op">&gt;</span> <span class="tk-num">0</span> <span class="tk-op">?</span> <span class="tk-ident">value</span> <span class="tk-op">:</span> <span class="tk-ident">best</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">case</span> <span class="tk-str">&quot;SUM&quot;</span><span class="tk-op">:</span>
+    <span class="tk-kw">case</span> <span class="tk-str">&quot;AVG&quot;</span><span class="tk-op">:</span> <span class="tk-op">{</span>
+      <span class="tk-kw">let</span> <span class="tk-ident">total</span> <span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+      <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">value</span> <span class="tk-kw">of</span> <span class="tk-ident">values</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-kw">const</span> <span class="tk-ident">number</span> <span class="tk-op">=</span> <span class="tk-fn">toNumber</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">number</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">null</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+          <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-ident">name</span> <span class="tk-op">+</span> <span class="tk-str">&quot; only works on numeric columns, got: &quot;</span> <span class="tk-op">+</span> <span class="tk-fn">displayValue</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">{</span>
+            <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;EXECUTION_ERROR&quot;</span><span class="tk-op">,</span>
+            <span class="tk-ident">hint</span><span class="tk-op">:</span> <span class="tk-str">&quot;Use typeof() or a WHERE condition to filter out non-numeric values first.&quot;</span><span class="tk-op">,</span>
+          <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-op">}</span>
+        <span class="tk-ident">total</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-ident">number</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+      <span class="tk-kw">return</span> <span class="tk-ident">name</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;SUM&quot;</span> <span class="tk-op">?</span> <span class="tk-ident">total</span> <span class="tk-op">:</span> <span class="tk-ident">total</span> <span class="tk-op">/</span> <span class="tk-ident">values</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">default</span><span class="tk-op">:</span>
+      <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">&quot;Unsupported aggregate function: &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">name</span><span class="tk-op">,</span> <span class="tk-op">{</span> <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;EXECUTION_ERROR&quot;</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Evaluate the argument for each row and drop NULLs. */</span>
+<span class="tk-kw">function</span> <span class="tk-fn">aggregateValues</span><span class="tk-op">(</span><span class="tk-ident">call</span><span class="tk-op">,</span> <span class="tk-ident">rows</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">arg</span> <span class="tk-op">=</span> <span class="tk-ident">call</span><span class="tk-op">.</span><span class="tk-ident">args</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">values</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+  <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">row</span> <span class="tk-kw">of</span> <span class="tk-ident">rows</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">value</span> <span class="tk-op">=</span> <span class="tk-fn">evaluate</span><span class="tk-op">(</span><span class="tk-ident">arg</span><span class="tk-op">,</span> <span class="tk-ident">row</span><span class="tk-op">,</span> <span class="tk-op">{</span><span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-fn">isNull</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-ident">values</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">values</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Handles forms like COUNT(DISTINCT x) / SUM(DISTINCT x). */</span>
+<span class="tk-kw">function</span> <span class="tk-fn">distinctIfNeeded</span><span class="tk-op">(</span><span class="tk-ident">call</span><span class="tk-op">,</span> <span class="tk-ident">values</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">call</span><span class="tk-op">.</span><span class="tk-ident">distinct</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">values</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">seen</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-type">Map</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">value</span> <span class="tk-kw">of</span> <span class="tk-ident">values</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">key</span> <span class="tk-op">=</span> <span class="tk-fn">groupKey</span><span class="tk-op">(</span><span class="tk-op">[</span><span class="tk-ident">value</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">seen</span><span class="tk-op">.</span><span class="tk-fn">has</span><span class="tk-op">(</span><span class="tk-ident">key</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-ident">seen</span><span class="tk-op">.</span><span class="tk-fn">set</span><span class="tk-op">(</span><span class="tk-ident">key</span><span class="tk-op">,</span> <span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">return</span> <span class="tk-op">[</span><span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-ident">seen</span><span class="tk-op">.</span><span class="tk-fn">values</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">]</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/**
+ * Build an &quot;aggregate evaluator&quot; for evaluate() in expr.js.
+ * @param {object[]} expressions aggregate expressions to compute for this group
+ * @param {Array} rows the rows in the group
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">createAggregateState</span><span class="tk-op">(</span><span class="tk-ident">expressions</span><span class="tk-op">,</span> <span class="tk-ident">rows</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">cache</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-type">Map</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">get</span> <span class="tk-op">=</span> <span class="tk-op">(</span><span class="tk-ident">expr</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">key</span> <span class="tk-op">=</span> <span class="tk-ident">JSON</span><span class="tk-op">.</span><span class="tk-fn">stringify</span><span class="tk-op">(</span><span class="tk-ident">expr</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">cache</span><span class="tk-op">.</span><span class="tk-fn">has</span><span class="tk-op">(</span><span class="tk-ident">key</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-ident">cache</span><span class="tk-op">.</span><span class="tk-fn">set</span><span class="tk-op">(</span><span class="tk-ident">key</span><span class="tk-op">,</span> <span class="tk-fn">computeAggregate</span><span class="tk-op">(</span><span class="tk-ident">expr</span><span class="tk-op">,</span> <span class="tk-ident">rows</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">return</span> <span class="tk-ident">cache</span><span class="tk-op">.</span><span class="tk-fn">get</span><span class="tk-op">(</span><span class="tk-ident">key</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span><span class="tk-op">;</span>
+  <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">expr</span> <span class="tk-kw">of</span> <span class="tk-ident">expressions</span><span class="tk-op">)</span> <span class="tk-fn">get</span><span class="tk-op">(</span><span class="tk-ident">expr</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-op">{</span> <span class="tk-ident">aggregate</span><span class="tk-op">:</span> <span class="tk-ident">get</span> <span class="tk-op">}</span><span class="tk-op">;</span>
+<span class="tk-op">}</span></code></pre></div>
+
+  <h2 id="state">Aggregate state: evaluate each expression once</h2>
+  <p>
+    An aggregate expression can appear in SELECT, HAVING, and ORDER BY at the same time. For example:
+  </p>
+  <pre class="code"><code>SELECT author, COUNT(*) AS n
+FROM books
+GROUP BY author
+HAVING COUNT(*) &gt; 1
+ORDER BY n DESC;</code></pre>
+  <p>
+    <code>COUNT(*)</code> appears twice (SELECT and HAVING). Re-scanning the group on every evaluation
+    would be much slower and would complicate the code. Our approach: collect all aggregate expressions in
+    the query up front, build a <strong>cache</strong> for each group, and look the value up when
+    evaluating.
+  </p>
+  <pre class="code"><code>// a group object looks like this
+{
+  row: representativeRow,   // for non-aggregate columns (SQLite style: first row wins)
+  rows: [ ... ],            // every row in this group
+  state: {
+    aggregate(expr) {       // look up the cache by the JSON-ified AST
+      return cache.get(JSON.stringify(expr));
+    }
+  }
+}</code></pre>
+  <p>
+    This also makes a query with aggregates but no GROUP BY work naturally: the whole table is one group,
+    and the representative row is the first row.
+  </p>
+
+  <h2 id="pipeline">Changes to the query pipeline</h2>
+  <p>
+    Introduce a <code>unit</code> concept for each row: with grouping, a unit is a group; without
+    grouping, a unit is a single row plus an empty aggregate state. Projection, HAVING, and ORDER BY all
+    evaluate against the unit.
+  </p>
+
+  <p class="diff__label">src/engine/query.js: step 6 → step 7</p><div class="diff"><pre class="code code--diff"><code><span class="d-ctx">  /**</span>
+<span class="d-ctx">   * SELECT Execution Pipeline</span>
+<span class="d-ctx">   *</span>
+<span class="d-ctx">   * A SELECT goes through these stages in order:</span>
+<span class="d-ctx">   *</span>
+<span class="d-ctx">   *   FROM     find the table and wrap each row as a &quot;source list&quot;</span>
+<span class="d-ctx">   *   JOIN     attach rows from other tables (chapter 9)</span>
+<span class="d-ctx">   *   WHERE    keep only rows whose condition is TRUE</span>
+<span class="d-del">-  *   GROUP BY groups rows and computes aggregates (chapter 7)</span>
+<span class="d-add">+  *   GROUP BY group rows (with aggregates but no GROUP BY, the whole table is one group)</span>
+<span class="d-ctx">   *   HAVING   filter groups</span>
+<span class="d-ctx">   *   SELECT   compute the output columns</span>
+<span class="d-ctx">   *   DISTINCT remove duplicate output rows</span>
+<span class="d-ctx">   *   ORDER BY sort</span>
+<span class="d-ctx">   *   LIMIT    take the first N rows</span>
+<span class="d-ctx">   *</span>
+<span class="d-del">-  * This chapter completes FROM / WHERE / SELECT / DISTINCT / ORDER BY / LIMIT.</span>
+<span class="d-del">-  * Queries without FROM (e.g. SELECT 1 + 1) must work too, so the source list may be empty.</span>
+<span class="d-add">+  * The unit of query execution is a &quot;unit&quot;: it holds a representative row and the group's aggregate state.</span>
+<span class="d-add">+  * Without grouping, each row is its own unit and the aggregate state is empty.</span>
+<span class="d-ctx">   */</span>
+<span class="d-ctx">  import { SqlError } from &quot;../errors.js&quot;;</span>
+<span class="d-del">- import { columnLabel, containsAggregate, evaluate } from &quot;./expr.js&quot;;</span>
+<span class="d-add">+ import { AGGREGATE_FUNCTIONS, columnLabel, evaluate } from &quot;./expr.js&quot;;</span>
+<span class="d-add">+ import { createAggregateState } from &quot;./aggregate.js&quot;;</span>
+<span class="d-ctx">  import { compareValues, groupKey, isNull, truthy, typeOf } from &quot;../values.js&quot;;</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  /**</span>
+<span class="d-ctx">   * Execute SELECT and return the query result.</span>
+<span class="d-ctx">   * @param {import(&quot;../database.js&quot;).Database} db</span>
+<span class="d-ctx">   * @param {object} ast the select node from the parser</span>
+<span class="d-ctx">   */</span>
+<span class="d-ctx">  export function executeSelect(db, ast) {</span>
+<span class="d-ctx">    if (ast.joins.length &gt; 0) {</span>
+<span class="d-ctx">      throw new SqlError(&quot;JOIN is not implemented yet (arrives in chapter 9)&quot;, { code: &quot;NOT_SUPPORTED&quot; });</span>
+<span class="d-ctx">    }</span>
+<span class="d-del">-   if (ast.groupBy.length &gt; 0 || ast.having || ast.columns.some((item) =&gt; containsAggregate(item.expr))) {</span>
+<span class="d-del">-     throw new SqlError(&quot;GROUP BY / aggregate functions are not implemented yet (arrive in chapter 7)&quot;, { code: &quot;NOT_SUPPORTED&quot; });</span>
+<span class="d-del">-   }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    const sources = buildSources(db, ast);</span>
+<span class="d-del">-   const rows = scan(db, sources);</span>
+<span class="d-del">-   const filtered = applyWhere(ast, rows);</span>
+<span class="d-add">+   const rawRows = [...scan(sources)];</span>
+<span class="d-add">+   const filtered = applyWhere(ast, rawRows);</span>
+<span class="d-add">+ </span>
+<span class="d-add">+   const aggregateExpressions = collectAggregateExpressions(ast);</span>
+<span class="d-add">+   const isGrouped = ast.groupBy.length &gt; 0 || aggregateExpressions.length &gt; 0;</span>
+<span class="d-add">+ </span>
+<span class="d-add">+   let units = isGrouped</span>
+<span class="d-add">+     ? buildGroups(ast, filtered, aggregateExpressions)</span>
+<span class="d-add">+     : filtered.map((row) =&gt; ({ row, state: {} }));</span>
+<span class="d-add">+ </span>
+<span class="d-add">+   if (ast.having) {</span>
+<span class="d-add">+     units = units.filter((unit) =&gt; truthy(evaluate(ast.having, unit.row, unit.state)));</span>
+<span class="d-add">+   }</span>
+<span class="d-add">+ </span>
+<span class="d-ctx">    const defs = buildProjection(ast, sources);</span>
+<span class="d-ctx">    const labels = defs.map((def) =&gt; def.label);</span>
+<span class="d-del">-   const state = {};</span>
+<span class="d-ctx">  </span>
+<span class="d-del">-   let projected = filtered.map((row) =&gt; ({</span>
+<span class="d-del">-     row,</span>
+<span class="d-add">+   let projected = units.map((unit) =&gt; ({</span>
+<span class="d-add">+     unit,</span>
+<span class="d-add">+     row: unit.row,</span>
+<span class="d-ctx">      labels,</span>
+<span class="d-del">-     values: projectRow(defs, row, state),</span>
+<span class="d-add">+     values: projectUnit(defs, unit),</span>
+<span class="d-ctx">    }));</span>
+<span class="d-ctx">  </span>
+<span class="d-del">-   if (ast.distinct) {</span>
+<span class="d-del">-     projected = dedupe(projected);</span>
+<span class="d-del">-   }</span>
+<span class="d-del">- </span>
+<span class="d-del">-   if (ast.orderBy.length &gt; 0) {</span>
+<span class="d-del">-     projected = sortRows(projected, ast.orderBy, state);</span>
+<span class="d-del">-   }</span>
+<span class="d-del">- </span>
+<span class="d-add">+   if (ast.distinct) projected = dedupe(projected);</span>
+<span class="d-add">+   if (ast.orderBy.length &gt; 0) projected = sortRows(projected, ast.orderBy);</span>
+<span class="d-ctx">    projected = applyLimit(projected, ast);</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    return {</span>
+<span class="d-ctx">      type: &quot;select&quot;,</span>
+<span class="d-ctx">      columns: describeColumns(defs, projected),</span>
+<span class="d-ctx">      rows: projected.map((item) =&gt; item.values),</span>
+<span class="d-ctx">      rowCount: projected.length,</span>
+<span class="d-ctx">    };</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-add">+ // ---------------------------------------------------------------------------</span>
+<span class="d-add">+ // Sources and scanning</span>
+<span class="d-add">+ // ---------------------------------------------------------------------------</span>
+<span class="d-add">+ </span>
+<span class="d-ctx">  /** Build the source list: [{ alias, table }]. */</span>
+<span class="d-ctx">  function buildSources(db, ast) {</span>
+<span class="d-ctx">    if (!ast.from) return [];</span>
+<span class="d-ctx">    const alias = ast.from.alias ?? ast.from.name;</span>
+<span class="d-del">-   const table = db.getTable(ast.from.name);</span>
+<span class="d-del">-   return [{ alias, table }];</span>
+<span class="d-add">+   return [{ alias, table: db.getTable(ast.from.name) }];</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-del">- /** Scan the table, turning each row into a source entry. */</span>
+<span class="d-del">- function* scan(db, sources) {</span>
+<span class="d-add">+ /**</span>
+<span class="d-add">+  * Scan the table, turning each row into a source entry.</span>
+<span class="d-add">+  * A query without FROM (SELECT 1 + 1) produces one row with an empty source list.</span>
+<span class="d-add">+  */</span>
+<span class="d-add">+ function* scan(sources) {</span>
+<span class="d-ctx">    if (sources.length === 0) {</span>
+<span class="d-ctx">      yield [];</span>
+<span class="d-ctx">      return;</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">    const [source] = sources;</span>
+<span class="d-ctx">    for (const values of source.table.all()) {</span>
+<span class="d-ctx">      yield [{ alias: source.alias, table: source.table, values }];</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  function applyWhere(ast, rows) {</span>
+<span class="d-del">-   if (!ast.where) return [...rows];</span>
+<span class="d-add">+   if (!ast.where) return rows;</span>
+<span class="d-ctx">    const result = [];</span>
+<span class="d-ctx">    for (const row of rows) {</span>
+<span class="d-del">-     const value = evaluate(ast.where, row, {});</span>
+<span class="d-ctx">      // Three-valued logic: keep only TRUE (NULL / UNKNOWN count as not satisfied)</span>
+<span class="d-del">-     if (truthy(value)) result.push(row);</span>
+<span class="d-add">+     if (truthy(evaluate(ast.where, row, {}))) result.push(row);</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">    return result;</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-add">+ // ---------------------------------------------------------------------------</span>
+<span class="d-add">+ // Grouping and aggregation</span>
+<span class="d-add">+ // ---------------------------------------------------------------------------</span>
+<span class="d-add">+ </span>
+<span class="d-add">+ /** Collect all aggregate expressions in SELECT / HAVING / ORDER BY (deduplicated). */</span>
+<span class="d-add">+ function collectAggregateExpressions(ast) {</span>
+<span class="d-add">+   const found = new Map();</span>
+<span class="d-add">+   const visit = (node) =&gt; {</span>
+<span class="d-add">+     if (node &amp;&amp; typeof node === &quot;object&quot; &amp;&amp; node.type === &quot;call&quot; &amp;&amp; AGGREGATE_FUNCTIONS.has(node.name.toUpperCase())) {</span>
+<span class="d-add">+       found.set(JSON.stringify(node), node);</span>
+<span class="d-add">+     }</span>
+<span class="d-add">+   };</span>
+<span class="d-add">+   walk(ast.columns.map((item) =&gt; item.expr), visit);</span>
+<span class="d-add">+   walk(ast.having, visit);</span>
+<span class="d-add">+   walk(ast.orderBy.map((order) =&gt; order.expr), visit);</span>
+<span class="d-add">+   return [...found.values()];</span>
+<span class="d-add">+ }</span>
+<span class="d-add">+ </span>
+<span class="d-add">+ function walk(node, visit) {</span>
+<span class="d-add">+   if (!node || typeof node !== &quot;object&quot;) return;</span>
+<span class="d-add">+   if (Array.isArray(node)) {</span>
+<span class="d-add">+     for (const item of node) walk(item, visit);</span>
+<span class="d-add">+     return;</span>
+<span class="d-add">+   }</span>
+<span class="d-add">+   visit(node);</span>
+<span class="d-add">+   for (const value of Object.values(node)) {</span>
+<span class="d-add">+     if (value &amp;&amp; typeof value === &quot;object&quot;) walk(value, visit);</span>
+<span class="d-add">+   }</span>
+<span class="d-add">+ }</span>
+<span class="d-add">+ </span>
+<span class="d-ctx">  /**</span>
+<span class="d-add">+  * Group rows according to GROUP BY.</span>
+<span class="d-add">+  * With aggregates but no GROUP BY (e.g. SELECT COUNT(*) FROM books),</span>
+<span class="d-add">+  * the whole table is one group; even with no rows, emit an empty group so COUNT(*) is 0.</span>
+<span class="d-add">+  */</span>
+<span class="d-add">+ function buildGroups(ast, rows, aggregateExpressions) {</span>
+<span class="d-add">+   const groups = [];</span>
+<span class="d-add">+ </span>
+<span class="d-add">+   if (ast.groupBy.length === 0) {</span>
+<span class="d-add">+     groups.push({ row: rows[0] ?? [], rows });</span>
+<span class="d-add">+   } else {</span>
+<span class="d-add">+     const index = new Map();</span>
+<span class="d-add">+     for (const row of rows) {</span>
+<span class="d-add">+       const keyValues = ast.groupBy.map((expr) =&gt; evaluate(expr, row, {}));</span>
+<span class="d-add">+       const key = groupKey(keyValues);</span>
+<span class="d-add">+       let group = index.get(key);</span>
+<span class="d-add">+       if (!group) {</span>
+<span class="d-add">+         group = { row, rows: [] };</span>
+<span class="d-add">+         index.set(key, group);</span>
+<span class="d-add">+         groups.push(group);</span>
+<span class="d-add">+       }</span>
+<span class="d-add">+       group.rows.push(row);</span>
+<span class="d-add">+     }</span>
+<span class="d-add">+   }</span>
+<span class="d-add">+ </span>
+<span class="d-add">+   for (const group of groups) {</span>
+<span class="d-add">+     group.state = createAggregateState(aggregateExpressions, group.rows);</span>
+<span class="d-add">+   }</span>
+<span class="d-add">+   return groups;</span>
+<span class="d-add">+ }</span>
+<span class="d-add">+ </span>
+<span class="d-add">+ // ---------------------------------------------------------------------------</span>
+<span class="d-add">+ // Output columns</span>
+<span class="d-add">+ // ---------------------------------------------------------------------------</span>
+<span class="d-add">+ </span>
+<span class="d-add">+ /**</span>
+<span class="d-ctx">   * Determine the output columns. SELECT * expands into multiple column definitions;</span>
+<span class="d-ctx">   * other expressions use their alias or a derived name.</span>
+<span class="d-ctx">   */</span>
+<span class="d-ctx">  function buildProjection(ast, sources) {</span>
+<span class="d-ctx">    const defs = [];</span>
+<span class="d-ctx">    for (const item of ast.columns) {</span>
+<span class="d-ctx">      if (item.expr.type === &quot;star&quot;) {</span>
+<span class="d-ctx">        const targets = item.expr.table</span>
+<span class="d-ctx">          ? sources.filter((source) =&gt; source.alias.toLowerCase() === item.expr.table.toLowerCase())</span>
+<span class="d-ctx">          : sources;</span>
+<span class="d-ctx">        if (targets.length === 0) {</span>
+<span class="d-ctx">          throw new SqlError(&quot;Table not found: &quot; + (item.expr.table ?? &quot;(no FROM)&quot;), {</span>
+<span class="d-ctx">            code: &quot;SCHEMA_ERROR&quot;,</span>
+<span class="d-ctx">            hint: &quot;SELECT * requires FROM.&quot;,</span>
+<span class="d-ctx">          });</span>
+<span class="d-ctx">        }</span>
+<span class="d-ctx">        for (const source of targets) {</span>
+<span class="d-ctx">          for (const column of source.table.columns) {</span>
+<span class="d-ctx">            defs.push({</span>
+<span class="d-ctx">              kind: &quot;source-column&quot;,</span>
+<span class="d-ctx">              alias: source.alias,</span>
+<span class="d-ctx">              columnName: column.name,</span>
+<span class="d-ctx">              label: column.name,</span>
+<span class="d-ctx">            });</span>
+<span class="d-ctx">          }</span>
+<span class="d-ctx">        }</span>
+<span class="d-ctx">        continue;</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      defs.push({</span>
+<span class="d-ctx">        kind: &quot;expression&quot;,</span>
+<span class="d-ctx">        expr: item.expr,</span>
+<span class="d-ctx">        label: item.alias ?? columnLabel(item.expr),</span>
+<span class="d-ctx">      });</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">    if (defs.length === 0) {</span>
+<span class="d-ctx">      throw new SqlError(&quot;SELECT requires at least one column&quot;, { code: &quot;SYNTAX_ERROR&quot; });</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">    return defs;</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-del">- function projectRow(defs, row, state) {</span>
+<span class="d-add">+ function projectUnit(defs, unit) {</span>
+<span class="d-ctx">    return defs.map((def) =&gt; {</span>
+<span class="d-ctx">      if (def.kind === &quot;source-column&quot;) {</span>
+<span class="d-del">-       const source = row.find((item) =&gt; item.alias === def.alias);</span>
+<span class="d-add">+       const source = unit.row.find((item) =&gt; item.alias === def.alias);</span>
+<span class="d-ctx">        if (!source || !source.values) return null;</span>
+<span class="d-ctx">        return source.values[def.columnName] ?? null;</span>
+<span class="d-ctx">      }</span>
+<span class="d-del">-     return evaluate(def.expr, row, state);</span>
+<span class="d-add">+     return evaluate(def.expr, unit.row, unit.state);</span>
+<span class="d-ctx">    });</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  /** Output column name and type (the type comes from the first non-NULL value). */</span>
+<span class="d-ctx">  function describeColumns(defs, projected) {</span>
+<span class="d-ctx">    return defs.map((def, index) =&gt; {</span>
+<span class="d-ctx">      let type = &quot;null&quot;;</span>
+<span class="d-ctx">      for (const item of projected) {</span>
+<span class="d-ctx">        if (!isNull(item.values[index])) {</span>
+<span class="d-ctx">          type = typeOf(item.values[index]);</span>
+<span class="d-ctx">          break;</span>
+<span class="d-ctx">        }</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      return { name: def.label, type };</span>
+<span class="d-ctx">    });</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  function dedupe(projected) {</span>
+<span class="d-ctx">    const seen = new Set();</span>
+<span class="d-ctx">    const result = [];</span>
+<span class="d-ctx">    for (const item of projected) {</span>
+<span class="d-ctx">      const key = groupKey(item.values);</span>
+<span class="d-ctx">      if (seen.has(key)) continue;</span>
+<span class="d-ctx">      seen.add(key);</span>
+<span class="d-ctx">      result.push(item);</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">    return result;</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-add">+ // ---------------------------------------------------------------------------</span>
+<span class="d-add">+ // Sorting and LIMIT</span>
+<span class="d-add">+ // ---------------------------------------------------------------------------</span>
+<span class="d-add">+ </span>
+<span class="d-ctx">  /**</span>
+<span class="d-del">-  * Sorting. ORDER BY accepts source columns or output column aliases:</span>
+<span class="d-add">+  * Sorting. ORDER BY accepts source columns, output column aliases, or aggregate functions:</span>
+<span class="d-ctx">   *</span>
+<span class="d-del">-  *   SELECT price * 2 AS double FROM books ORDER BY double DESC</span>
+<span class="d-add">+  *   SELECT author, COUNT(*) AS n FROM books GROUP BY author ORDER BY n DESC</span>
+<span class="d-ctx">   */</span>
+<span class="d-del">- function sortRows(projected, orderBy, state) {</span>
+<span class="d-add">+ function sortRows(projected, orderBy) {</span>
+<span class="d-ctx">    const decorated = projected.map((item) =&gt; ({</span>
+<span class="d-ctx">      ...item,</span>
+<span class="d-del">-     keys: orderBy.map((order) =&gt; orderValue(order.expr, item, state)),</span>
+<span class="d-add">+     keys: orderBy.map((order) =&gt; orderValue(order.expr, item)),</span>
+<span class="d-ctx">    }));</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    decorated.sort((left, right) =&gt; {</span>
+<span class="d-ctx">      for (let i = 0; i &lt; orderBy.length; i++) {</span>
+<span class="d-ctx">        const direction = orderBy[i].direction === &quot;desc&quot; ? -1 : 1;</span>
+<span class="d-ctx">        const compared = compareValues(left.keys[i], right.keys[i]);</span>
+<span class="d-ctx">        if (compared !== 0) return compared * direction;</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      return 0;</span>
+<span class="d-ctx">    });</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    return decorated;</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-del">- function orderValue(expr, item, state) {</span>
+<span class="d-add">+ function orderValue(expr, item) {</span>
+<span class="d-ctx">    // Check for an output column alias first (SQL allows aliases in ORDER BY).</span>
+<span class="d-ctx">    if (expr.type === &quot;column&quot; &amp;&amp; !expr.table) {</span>
+<span class="d-del">-     const index = item.labels.findIndex(</span>
+<span class="d-del">-       (label) =&gt; label.toLowerCase() === expr.name.toLowerCase()</span>
+<span class="d-del">-     );</span>
+<span class="d-add">+     const index = item.labels.findIndex((label) =&gt; label.toLowerCase() === expr.name.toLowerCase());</span>
+<span class="d-ctx">      if (index &gt;= 0) return item.values[index];</span>
+<span class="d-ctx">    }</span>
+<span class="d-del">-   return evaluate(expr, item.row, state);</span>
+<span class="d-add">+   return evaluate(expr, item.row, item.unit.state);</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  function applyLimit(projected, ast) {</span>
+<span class="d-ctx">    const offset = ast.offset ?? 0;</span>
+<span class="d-ctx">    const limit = ast.limit;</span>
+<span class="d-ctx">    if (limit === null &amp;&amp; offset === 0) return projected;</span>
+<span class="d-del">-   const start = offset;</span>
+<span class="d-ctx">    const end = limit === null ? projected.length : offset + limit;</span>
+<span class="d-del">-   return projected.slice(start, end);</span>
+<span class="d-add">+   return projected.slice(offset, end);</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+</code></pre></div>
+
+  <div class="callout callout--warn">
+    <p class="callout__title">SQLite's bare-column behavior</p>
+    <p>
+      <code>SELECT author, COUNT(*) FROM books</code> is an error in standard SQL (author isn't in GROUP
+      BY). SQLite allows it and picks an arbitrary row's value from the group. Our implementation matches
+      SQLite: take the first row. Convenient, but it makes unexpected queries easy to write — in
+      practice, put every non-aggregate column in GROUP BY.
+    </p>
+  </div>
+
+  <h2 id="tests">Tests: aggregate edge cases</h2>
+  <p>
+    Aggregate tests need special attention to the empty set and NULL: over no non-NULL values,
+    <code>SUM</code> is NULL, not 0, while <code>COUNT(*)</code> is 0. Those are the differences you
+    actually run into in practice.
+  </p>
+
+  <div class="file"><div class="file__head"><span class="file__name">tests/aggregate.test.js</span><span class="file__meta">JavaScript · 105 lines · step 7</span></div><pre class="code"><code><span class="tk-kw">import</span> <span class="tk-ident">test</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:test&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-ident">assert</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:assert/strict&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">Database</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;../src/database.js&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-kw">function</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-fn">Database</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT, author TEXT, price REAL);&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">`INSERT INTO books VALUES
+    (1, 'JavaScript', 'Alice', 100),
+    (2, 'Database',   'Bob',   200),
+    (3, 'Operating',  'Alice', NULL),
+    (4, 'SQL',        'Alice', 150),
+    (5, 'Nothing',    NULL,     50);`</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">db</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;COUNT(*) and COUNT(column)&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT COUNT(*) FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-num">5</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT COUNT(price) FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-num">4</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT COUNT(author) FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-num">4</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;COUNT(DISTINCT ...)&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT COUNT(DISTINCT author) FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-num">2</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;SUM / AVG / MIN / MAX&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT SUM(price) FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-num">500</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT AVG(price) FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-num">125</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT MIN(price) FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-num">50</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT MAX(price) FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-num">200</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT MIN(title), MAX(title) FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-str">&quot;Database&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;with no matching rows: COUNT is 0, the others are NULL&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">row</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT COUNT(*), SUM(price), AVG(price), MIN(price) FROM books WHERE id &gt; 99&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">row</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;GROUP BY: grouped aggregates&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">result</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">`SELECT author, COUNT(*) AS n, SUM(price) AS total
+    FROM books GROUP BY author ORDER BY author`</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-op">[</span>
+    <span class="tk-op">[</span><span class="tk-kw">null</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-num">50</span><span class="tk-op">]</span><span class="tk-op">,</span>
+    <span class="tk-op">[</span><span class="tk-str">&quot;Alice&quot;</span><span class="tk-op">,</span> <span class="tk-num">3</span><span class="tk-op">,</span> <span class="tk-num">250</span><span class="tk-op">]</span><span class="tk-op">,</span>
+    <span class="tk-op">[</span><span class="tk-str">&quot;Bob&quot;</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-num">200</span><span class="tk-op">]</span><span class="tk-op">,</span>
+  <span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">columns</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">c</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">c</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;author&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;n&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;total&quot;</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;GROUP BY multiple columns&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">result</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT author, price FROM books GROUP BY author, price ORDER BY author, price&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-com">// Alice has three prices, Bob one, NULL one -&gt; 5 groups</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">rowCount</span><span class="tk-op">,</span> <span class="tk-num">5</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;GROUP BY an expression&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">result</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT LENGTH(title) AS len, COUNT(*) AS n FROM books GROUP BY LENGTH(title) ORDER BY len&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-com">// all five titles differ in length: SQL(3), Nothing(7), Database(8), Operating(9), JavaScript(10)</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-op">[</span><span class="tk-num">3</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-num">7</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-num">8</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-num">9</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-num">10</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">]</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;HAVING filters groups&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">result</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">`SELECT author, COUNT(*) AS n FROM books GROUP BY author HAVING COUNT(*) &gt; 1`</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-op">[</span><span class="tk-str">&quot;Alice&quot;</span><span class="tk-op">,</span> <span class="tk-num">3</span><span class="tk-op">]</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;ORDER BY an aggregate result (alias or expression both work)&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">byAlias</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT author, COUNT(*) AS n FROM books GROUP BY author ORDER BY n DESC, author&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">byAlias</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-op">[</span><span class="tk-str">&quot;Alice&quot;</span><span class="tk-op">,</span> <span class="tk-num">3</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-kw">null</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;Bob&quot;</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">]</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">byExpression</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT author FROM books GROUP BY author ORDER BY COUNT(*) DESC&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">byExpression</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-str">&quot;Alice&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;GROUP BY with no matching rows returns 0 rows&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT author, COUNT(*) FROM books WHERE id &gt; 99 GROUP BY author&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rowCount</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;aggregate without GROUP BY: the whole table is one group&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-com">// SQLite allows this form: a non-aggregate column takes the first row of the group</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">result</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT author, COUNT(*) FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">rowCount</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">[</span><span class="tk-num">1</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-num">5</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;SUM reports an error on non-numeric input&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">throws</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT SUM(author) FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">/</span><span class="tk-ident">numeric</span> <span class="tk-ident">columns</span><span class="tk-op">/</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;aggregates cannot appear in WHERE&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">throws</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT * FROM books WHERE COUNT(*) &gt; 1&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">/</span><span class="tk-ident">aggregate</span> <span class="tk-kw">function</span><span class="tk-op">/</span><span class="tk-ident">i</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span></code></pre></div>
+
+  <div class="checkpoint">
+    <p class="checkpoint__title">Checkpoint — grouped statistics</p>
+    <pre class="code"><code>node --test tests/aggregate.test.js</code></pre>
+    <p class="checkpoint__expect">ℹ tests 13
+ℹ pass 13
+ℹ fail 0</p>
+    <p>Then try this in the REPL: <code>SELECT author, COUNT(*) AS n, SUM(price) FROM books GROUP BY author ORDER BY n DESC;</code></p>
+  </div>
+
+  <h2 id="recap">Chapter recap</h2>
+  <ul>
+    <li>An aggregate compresses a group of rows into one value; without GROUP BY the whole table is one group.</li>
+    <li>COUNT counts rows, the other aggregates ignore NULL, and the empty set behaves differently.</li>
+    <li>Aggregate results are cached so SELECT, HAVING, and ORDER BY share one computation.</li>
+  </ul>
+
+  <div class="exercise">
+    <p class="exercise__title">Exercises</p>
+    <ol>
+      <li>Add a <code>GROUP_CONCAT(x, ',')</code> aggregate that concatenates strings.</li>
+      <li>Support multi-column deduplication with <code>COUNT(DISTINCT a, b)</code>.</li>
+      <li>Think about it: if the GROUP BY columns were indexed, could we group without sorting first? How does that relate to external sorting?</li>
+    </ol>
+  </div>
+
+  <h2 id="vocab">Chapter glossary</h2>
+  <dl class="vocab">
+    <dt>Aggregate</dt><dd>A computation that compresses many rows into one value, such as COUNT or SUM.</dd>
+    <dt>Group</dt><dd>The set of rows that share a GROUP BY value.</dd>
+    <dt>HAVING</dt><dd>A condition that filters groups; WHERE filters rows, HAVING filters groups.</dd>
+  </dl>
+</article>
+
+
+      <footer class="chapter-foot site-chapter-foot">
+        <div class="chapter-foot__inner">
+          <p class="chapter-foot__label">Finished this chapter? Mark it complete and the progress stays in this browser.</p>
+          <button id="mark-complete" class="btn btn--complete" type="button"
+                  data-chapter="" aria-pressed="false">Mark chapter complete</button>
+        </div>
+        <nav class="pager" aria-label="Previous and next chapter">
+          <a class="pager-link pager-link--prev" href="../chapters/ch06.html"><span class="pager-link__meta">Previous chapter</span><span class="pager-link__title">Chapter 6 · SELECT pipeline</span></a>
+          <a class="pager-link pager-link--next" href="../chapters/ch08.html"><span class="pager-link__meta">Next chapter</span><span class="pager-link__title">Chapter 8 · Update and delete</span></a>
+        </nav>
+      </footer>
+    </div>
+    <aside id="page-toc" class="page-toc" aria-label="On this page"></aside>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <p><strong>Build a SQL Database Engine from Scratch</strong> — ten chapters that start with a single character and end with a database that persists, queries, and transacts.</p>
+        <p class="footer-mono">Zero dependencies · Node.js only · built by hand</p>
+      </div>
+      <div>
+        <p class="footer-mono"><a href="../playground.html">SQL Playground</a> · <a href="../reference.html">Syntax Reference</a> · <a href="../index.html">Home</a></p>
+        <p class="footer-mono">Switch between light and dark themes in the top-right corner.</p>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="search-overlay" role="dialog" aria-modal="true" aria-label="Search chapters" aria-hidden="true">
+    <div class="search-panel">
+      <div class="search-panel__head">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <input id="search-input" type="search" placeholder="Search chapter titles or summaries…"
+               autocomplete="off" spellcheck="false" aria-label="Search chapters">
+        <span class="search-panel__esc">Esc</span>
+      </div>
+      <ul class="search-results" id="search-results"></ul>
+      <div class="search-panel__foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> select</span>
+        <span><kbd>Enter</kbd> open</span>
+        <span><kbd>/</kbd> open search</span>
+        <span><kbd>[</kbd><kbd>]</kbd> previous / next chapter</span>
+      </div>
+    </div>
+  </div>
+
+  <noscript>
+    <p style="max-width:74ch;margin:1rem auto;padding:0 1rem;font-family:monospace;color:#6e675c">
+      The main content of this site is readable without JavaScript; search, theme switching, and progress tracking need it enabled.
+    </p>
+  </noscript>
+</body>
+</html>

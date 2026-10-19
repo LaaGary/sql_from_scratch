@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chapter 1 · Orientation and skeleton — Building an SQL database engine from scratch</title>
+  <meta name="description" content="Break an SQL database into its six main parts, then build the project skeleton and a command-line REPL.">
+  <meta property="og:title" content="Chapter 1 · Orientation and skeleton — Building an SQL database engine from scratch">
+  <meta property="og:description" content="Break an SQL database into its six main parts, then build the project skeleton and a command-line REPL.">
+  <meta property="og:type" content="article">
+  <meta property="og:locale" content="en_US">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("sql-theme");
+        document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script defer src="../assets/toc.js"></script>
+  <script defer src="../assets/site.js"></script>
+</head>
+<body class="page page--chapter" data-page-kind="chapter"
+      data-prev-url="" data-next-url="../chapters/ch02.html">
+
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <div id="reading-progress" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="site-header__left">
+      <button id="sidebar-toggle" class="icon-btn" type="button"
+              aria-label="Open chapter navigation" aria-controls="sidebar" aria-expanded="false">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <path d="M2 4h12M2 8h12M2 12h12" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <a class="brand" href="../index.html">
+        <span class="brand__mark" aria-hidden="true">SQL</span>
+        <span class="brand__name">SQL from Scratch</span>
+      </a>
+      <span class="header-chapter">Chapter 1 · Orientation and skeleton</span>
+    </div>
+    <div class="site-header__right">
+      <span class="header-progress" data-progress-label>0/10 complete</span>
+      <button id="search-toggle" class="icon-btn icon-btn--search" type="button"
+              aria-label="Search chapters" aria-haspopup="dialog">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <span class="icon-btn__label">Search</span>
+        <span class="kbd-hint">/</span>
+      </button>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
+        <svg class="theme-icon theme-icon--sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="8" cy="8" r="3"/>
+          <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" stroke-linecap="round"/>
+        </svg>
+        <svg class="theme-icon theme-icon--moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M13.4 9.6A5.8 5.8 0 0 1 6.4 2.6a5.8 5.8 0 1 0 7 7Z" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <aside class="sidebar" id="sidebar" aria-label="Chapter navigation">
+    <div class="sidebar__scroll">
+      <p class="sidebar__heading">Chapter Index</p>
+      <ol class="toc-list"><li class="toc-item"><a class="toc-link" href="../chapters/ch01.html"><span class="toc-num">01</span><span class="toc-title">Orientation and skeleton</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch02.html"><span class="toc-num">02</span><span class="toc-title">Lexing</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch03.html"><span class="toc-num">03</span><span class="toc-title">Parsing</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch04.html"><span class="toc-num">04</span><span class="toc-title">Values and types</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch05.html"><span class="toc-num">05</span><span class="toc-title">Storage layer</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch06.html"><span class="toc-num">06</span><span class="toc-title">SELECT pipeline</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch07.html"><span class="toc-num">07</span><span class="toc-title">Aggregates and grouping</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch08.html"><span class="toc-num">08</span><span class="toc-title">Update and delete</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch09.html"><span class="toc-num">09</span><span class="toc-title">JOIN</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch10.html"><span class="toc-num">10</span><span class="toc-title">Persistence and transactions</span></a></li></ol>
+      <p class="sidebar__heading">Tools</p>
+      <nav class="nav-list" aria-label="Tools">
+        <a class="toc-link" href="../playground.html"><span class="toc-num">▸</span><span class="toc-title">SQL Playground</span></a>
+        <a class="toc-link" href="../reference.html"><span class="toc-num">▸</span><span class="toc-title">Syntax Reference</span></a>
+        <a class="toc-link" href="../index.html"><span class="toc-num">▸</span><span class="toc-title">Home &amp; Roadmap</span></a>
+      </nav>
+    </div>
+    <div class="sidebar__foot">
+      <a href="../index.html"><span>Home</span><span>⌂</span></a>
+      <a href="../playground.html"><span>Playground</span><span>⟩</span></a>
+      <a href="../reference.html"><span>Reference</span><span>⌗</span></a>
+      <p class="sidebar__version">SQL engine tutorial · 0.1<br>Zero dependencies · works offline</p>
+    </div>
+  </aside>
+  <div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
+
+  <main id="main" class="layout">
+    <div class="content-column">
+      <aside class="chapter-meta">
+  <h2 class="chapter-meta__title">Chapter info</h2>
+  <ul class="chapter-meta__list">
+    <li><strong>Estimated time</strong> 25 minutes</li>
+    <li><strong>Difficulty</strong> Beginner — just a little JavaScript</li>
+    <li><strong>What you'll learn</strong> The six parts of a database engine, the project layout, and the interactive REPL loop</li>
+    <li><strong>What you'll build</strong> <code>bin/sql.js</code>, <code>package.json</code></li>
+  </ul>
+</aside>
+
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Chapter 01 / Tour and skeleton</p>
+    <h1>Start with a map: what is a database made of?</h1>
+    <p class="chapter-lead">
+      You probably use <code>SELECT</code> every day, but rarely stop to think about what happens behind those six letters.
+      This tutorial starts from an empty folder and writes, in plain JavaScript, a SQL database that can persist, query,
+      and run transactions. Chapter 1 draws the map first, then sets up the project skeleton.
+    </p>
+  </header>
+
+  <h2 id="why">Why write your own database?</h2>
+  <p>
+    Because a database is one of the few pieces of software you rely on every day but rarely take apart. Once you know
+    how a row becomes a 4096-byte page, how a table is scanned, and how a transaction is recovered after a power loss,
+    vague intuitions suddenly become concrete: why adding an index makes a query faster, why <code>NULL</code> can't be
+    compared with <code>=</code>, and why even a small query can be slow.
+  </p>
+  <p>
+    And it's not as hard as it looks. An educational database engine has only three core jobs:
+  </p>
+  <ul>
+    <li><strong>Read SQL</strong>: split text into tokens, then build a syntax tree (AST).</li>
+    <li><strong>Compute results</strong>: scan, filter, group, sort, join.</li>
+    <li><strong>Store results</strong>: page format, transaction journal, crash recovery.</li>
+  </ul>
+  <p>
+    This project builds those three parts in order. By the end you'll have a zero-dependency database you can open
+    with <code>node bin/sql.js</code>, plus an engine you can play with in the browser.
+  </p>
+
+  <h2 id="architecture">Architecture: the journey of one SQL statement</h2>
+  <p>Start with a picture. When you type this SQL:</p>
+  <pre class="code"><code>SELECT title FROM books WHERE price &gt; 100 ORDER BY title;</code></pre>
+  <p>Inside our engine it passes through these stages:</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Stage</th><th>Module</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td>Tokenizing</td><td><code>tokenizer.js</code></td><td>Splits the string into tokens such as <code>word(SELECT)</code>, <code>word(books)</code>…, and records their positions.</td></tr>
+        <tr><td>Parsing</td><td><code>parser.js</code></td><td>Builds an AST from the tokens with recursive descent and reports syntax errors.</td></tr>
+        <tr><td>Evaluation</td><td><code>engine/expr.js</code></td><td>Turns WHERE conditions and column expressions into values.</td></tr>
+        <tr><td>Query execution</td><td><code>engine/query.js</code></td><td>Scans, filters, groups, projects, sorts, and limits rows.</td></tr>
+        <tr><td>Storage</td><td><code>table.js</code>, <code>storage/*</code></td><td>Rows live in memory or in pages; committed data is written to disk.</td></tr>
+        <tr><td>Interface</td><td><code>bin/sql.js</code></td><td>REPL: read a line, execute it, print the result as a table.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Each chapter covers one module (or a few). You'll find that the interfaces are small:
+    the tokenizer returns only an array of tokens, the parser returns only plain objects, and the executor returns only
+    a result object. Small interfaces are easier to test and easier to replace.
+  </p>
+
+  <div class="callout callout--tip">
+    <p class="callout__title">How to read this tutorial</p>
+    <p>
+      Every chapter has a checkpoint: do the work, run the command, and if you see the same output, move on.
+      Code blocks are the <b>complete file at the end of the chapter</b> (not fragments), so you can paste them straight
+      into your project. Differences between chapters are marked with diff blocks.
+    </p>
+  </div>
+
+  <h2 id="layout">Project layout: everything in its place</h2>
+  <pre class="code"><code>SQL/
+├── bin/sql.js              # command-line REPL
+├── src/
+│   ├── tokenizer.js        # lexical analysis
+│   ├── parser.js           # parsing → AST
+│   ├── errors.js           # unified error types
+│   ├── values.js           # values, types, comparison, NULL
+│   ├── schema.js           # structure produced by CREATE TABLE
+│   ├── table.js            # rows and constraints of one table
+│   ├── database.js         # public facade: open / exec / close
+│   ├── engine/
+│   │   ├── expr.js         # expression evaluation
+│   │   ├── query.js        # SELECT pipeline
+│   │   ├── aggregate.js    # COUNT / SUM / GROUP BY
+│   │   ├── write.js        # INSERT / UPDATE / DELETE / DDL
+│   │   └── executor.js     # dispatch by statement type
+│   ├── storage/
+│   │   ├── memory.js       # in-memory backend
+│   │   ├── page.js         # page format
+│   │   ├── journal.js      # transaction journal
+│   │   └── disk.js         # file backend
+│   └── node.js             # Node.js entry point (openDatabase)
+├── tests/                  # unit and integration tests for node --test
+├── steps/                  # complete project snapshot at the end of each chapter
+└── docs/                   # the tutorial site you're reading
+  </code></pre>
+  <p>
+    The <code>steps/</code> folder is your time machine: <code>steps/02-tokenizer</code> is the project as it exists
+    at the end of chapter 2. If you get stuck, compare against it, or copy it out and run it.
+  </p>
+
+  <h2 id="prerequisites">Before you start: what you need</h2>
+  <ul>
+    <li><strong>Node.js 18 or newer</strong> — the project has zero dependencies, so no <code>npm install</code>.</li>
+    <li>A terminal that can run commands (PowerShell on Windows and Terminal on macOS both work).</li>
+    <li>Basic JavaScript: objects, arrays, <code>Map</code>, <code>class</code>, <code>async</code>.</li>
+  </ul>
+  <p>Check the version:</p>
+  <pre class="code"><code>node --version
+# v18.x or newer</code></pre>
+
+  <h2 id="skeleton">Build the skeleton: start with a REPL that only says hello</h2>
+  <p>
+    The first file is <code>package.json</code>. It's ordinary, but note <code>"type": "module"</code>:
+    everything uses ES modules, so the same code can later be bundled into the browser unchanged.
+  </p>
+  <pre class="code"><code>{
+  "name": "sql-from-scratch",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "repl": "node bin/sql.js",
+    "test": "node --test"
+  },
+  "engines": { "node": "&gt;=18" }
+}</code></pre>
+  <p>
+    Next is <code>bin/sql.js</code>: a loop that reads input and answers built-in commands.
+    It doesn't execute SQL yet — that's chapter 6 — but it wires up the path from user input to response.
+  </p>
+
+  <div class="file"><div class="file__head"><span class="file__name">bin/sql.js</span><span class="file__meta">JavaScript · 60 lines · step 1</span></div><pre class="code"><code>#<span class="tk-op">!</span><span class="tk-op">/</span><span class="tk-ident">usr</span><span class="tk-op">/</span><span class="tk-ident">bin</span><span class="tk-op">/</span><span class="tk-ident">env</span> <span class="tk-ident">node</span>
+<span class="tk-com">/**
+ * The sql-from-scratch command-line interface (CLI).
+ *
+ * Chapter 1: build a REPL skeleton that reads input and answers built-in commands.
+ * Later chapters plug in the tokenizer, parser, and execution engine step by step.
+ */</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">createInterface</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:readline/promises&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-ident">process</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:process&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-kw">const</span> <span class="tk-ident">VERSION</span> <span class="tk-op">=</span> <span class="tk-str">&quot;1.0.0&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-kw">const</span> <span class="tk-ident">HELP</span> <span class="tk-op">=</span> <span class="tk-op">[</span>
+  <span class="tk-str">&quot;Built-in commands:&quot;</span><span class="tk-op">,</span>
+  <span class="tk-str">&quot;  .help            show this help&quot;</span><span class="tk-op">,</span>
+  <span class="tk-str">&quot;  .exit / .quit    quit&quot;</span><span class="tk-op">,</span>
+  <span class="tk-str">&quot;&quot;</span><span class="tk-op">,</span>
+  <span class="tk-str">&quot;This version has no SQL engine yet; entering SQL shows 'not implemented'.&quot;</span>
+<span class="tk-op">]</span><span class="tk-op">.</span><span class="tk-fn">join</span><span class="tk-op">(</span><span class="tk-str">&quot;\n&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-kw">function</span> <span class="tk-fn">printBanner</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-ident">console</span><span class="tk-op">.</span><span class="tk-fn">log</span><span class="tk-op">(</span><span class="tk-str">`sql-from-scratch v${VERSION} — an SQL database built from scratch in JavaScript`</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">console</span><span class="tk-op">.</span><span class="tk-fn">log</span><span class="tk-op">(</span><span class="tk-str">&quot;Type .help for commands, .exit to quit.&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-kw">async</span> <span class="tk-kw">function</span> <span class="tk-fn">main</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-fn">printBanner</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">rl</span> <span class="tk-op">=</span> <span class="tk-fn">createInterface</span><span class="tk-op">(</span><span class="tk-op">{</span> <span class="tk-ident">input</span><span class="tk-op">:</span> <span class="tk-ident">process</span><span class="tk-op">.</span><span class="tk-ident">stdin</span><span class="tk-op">,</span> <span class="tk-ident">output</span><span class="tk-op">:</span> <span class="tk-ident">process</span><span class="tk-op">.</span><span class="tk-ident">stdout</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">rl</span><span class="tk-op">.</span><span class="tk-fn">on</span><span class="tk-op">(</span><span class="tk-str">&quot;SIGINT&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+    <span class="tk-ident">console</span><span class="tk-op">.</span><span class="tk-fn">log</span><span class="tk-op">(</span><span class="tk-str">&quot;&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">rl</span><span class="tk-op">.</span><span class="tk-fn">close</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">try</span> <span class="tk-op">{</span>
+    <span class="tk-kw">while</span> <span class="tk-op">(</span><span class="tk-kw">true</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">let</span> <span class="tk-ident">line</span><span class="tk-op">;</span>
+      <span class="tk-kw">try</span> <span class="tk-op">{</span>
+        <span class="tk-ident">line</span> <span class="tk-op">=</span> <span class="tk-kw">await</span> <span class="tk-ident">rl</span><span class="tk-op">.</span><span class="tk-fn">question</span><span class="tk-op">(</span><span class="tk-str">&quot;sql&gt; &quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span> <span class="tk-kw">catch</span> <span class="tk-op">{</span>
+        <span class="tk-kw">break</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">input</span> <span class="tk-op">=</span> <span class="tk-ident">line</span><span class="tk-op">.</span><span class="tk-fn">trim</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">input</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;&quot;</span><span class="tk-op">)</span> <span class="tk-kw">continue</span><span class="tk-op">;</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">input</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;.exit&quot;</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">input</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;.quit&quot;</span><span class="tk-op">)</span> <span class="tk-kw">break</span><span class="tk-op">;</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">input</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;.help&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-ident">console</span><span class="tk-op">.</span><span class="tk-fn">log</span><span class="tk-op">(</span><span class="tk-ident">HELP</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-kw">continue</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">input</span><span class="tk-op">.</span><span class="tk-fn">startsWith</span><span class="tk-op">(</span><span class="tk-str">&quot;.&quot;</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-ident">console</span><span class="tk-op">.</span><span class="tk-fn">error</span><span class="tk-op">(</span><span class="tk-str">`Unknown command: ${input.split(/\s+/)[0]} (try .help)`</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-kw">continue</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+      <span class="tk-ident">console</span><span class="tk-op">.</span><span class="tk-fn">error</span><span class="tk-op">(</span><span class="tk-str">&quot;Not implemented yet: the SQL engine arrives in a later chapter.&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+  <span class="tk-op">}</span> <span class="tk-kw">finally</span> <span class="tk-op">{</span>
+    <span class="tk-ident">rl</span><span class="tk-op">.</span><span class="tk-fn">close</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">console</span><span class="tk-op">.</span><span class="tk-fn">log</span><span class="tk-op">(</span><span class="tk-str">&quot;Goodbye!&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+<span class="tk-op">}</span>
+
+<span class="tk-fn">main</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span></code></pre></div>
+
+  <p>Three things are worth noting:</p>
+  <ol>
+    <li>
+      <strong><code>readline/promises</code></strong>: Node.js's built-in interactive input module.
+      <code>await rl.question("sql&gt; ")</code> waits until the user presses Enter before returning a line.
+    </li>
+    <li>
+      <strong><code>try { ... } catch { }</code></strong> wraps <code>rl.question</code>:
+      when the user presses Ctrl+D (or piped input ends), the promise is rejected; that's the normal way to exit.
+    </li>
+    <li>
+      <strong>Dot commands</strong> (<code>.help</code>, <code>.exit</code>) are commands of the CLI itself,
+      not SQL. Later chapters add <code>.tables</code>, <code>.schema</code>, and others.
+    </li>
+  </ol>
+
+  <div class="checkpoint">
+    <p class="checkpoint__title">Checkpoint — the REPL is alive</p>
+    <pre class="code"><code>node bin/sql.js</code></pre>
+    <p class="checkpoint__expect">sql-from-scratch v1.0.0 — a SQL database built from scratch in JavaScript
+Type .help for commands, .exit to quit.
+sql&gt;</p>
+    <p>Type <code>.help</code> to see the available commands; type <code>SELECT 1;</code> and you'll see "not implemented". That's expected.</p>
+  </div>
+
+  <h2 id="mental-model">Build the right mental model: compiler + interpreter</h2>
+  <p>
+    Many tutorials make databases sound mysterious. Structurally, though, a database is a combination of two classic
+    kinds of program:
+  </p>
+  <ul>
+    <li><strong>The front half works like a compiler</strong>: string → tokens → syntax tree. This part runs once and is independent of the data.</li>
+    <li><strong>The back half works like an interpreter</strong>: walk the syntax tree, scan data, compute results. This part runs once per row.</li>
+  </ul>
+  <p>
+    The split matters: the syntax tree for <code>SELECT title FROM books</code> is the same whether books has three
+    rows or three million. So we can parse and validate the SQL first, then enter execution. Later, if you want more
+    speed, you change the back half (add indexes, change the execution plan).
+  </p>
+
+  <h2 id="recap">Chapter recap</h2>
+  <ul>
+    <li>A database engine consists of a tokenizer, parser, expression evaluator, query executor, storage layer, and CLI.</li>
+    <li>The project uses ES modules and has zero dependencies; <code>steps/</code> keeps a complete snapshot of each chapter.</li>
+    <li>We start with a talking REPL skeleton, ready for the engine to plug in later.</li>
+  </ul>
+
+  <div class="exercise">
+    <p class="exercise__title">Exercises</p>
+    <ol>
+      <li>Add a <code>.version</code> command to the REPL that prints the <code>VERSION</code> constant.</li>
+      <li>Make the REPL print nothing when it receives an empty line (the current code already skips empty lines — verify it).</li>
+      <li>Think about it: if you replaced <code>readline</code> with a loop that reads a file, would the REPL still work?</li>
+    </ol>
+  </div>
+
+  <h2 id="vocab">Chapter glossary</h2>
+  <dl class="vocab">
+    <dt>REPL</dt><dd>Read-Eval-Print Loop: read a line, evaluate, print, repeat. Almost every database CLI works this way.</dd>
+    <dt>Token</dt><dd>The smallest unit of lexical analysis: keywords, identifiers, numbers, strings, operators.</dd>
+    <dt>AST</dt><dd>Abstract Syntax Tree: the structure of a statement represented as objects, ignoring parentheses and whitespace.</dd>
+  </dl>
+</article>
+
+
+      <footer class="chapter-foot site-chapter-foot">
+        <div class="chapter-foot__inner">
+          <p class="chapter-foot__label">Finished this chapter? Mark it complete and the progress stays in this browser.</p>
+          <button id="mark-complete" class="btn btn--complete" type="button"
+                  data-chapter="" aria-pressed="false">Mark chapter complete</button>
+        </div>
+        <nav class="pager" aria-label="Previous and next chapter">
+          
+          <a class="pager-link pager-link--next" href="../chapters/ch02.html"><span class="pager-link__meta">Next chapter</span><span class="pager-link__title">Chapter 2 · Lexing</span></a>
+        </nav>
+      </footer>
+    </div>
+    <aside id="page-toc" class="page-toc" aria-label="On this page"></aside>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <p><strong>Build a SQL Database Engine from Scratch</strong> — ten chapters that start with a single character and end with a database that persists, queries, and transacts.</p>
+        <p class="footer-mono">Zero dependencies · Node.js only · built by hand</p>
+      </div>
+      <div>
+        <p class="footer-mono"><a href="../playground.html">SQL Playground</a> · <a href="../reference.html">Syntax Reference</a> · <a href="../index.html">Home</a></p>
+        <p class="footer-mono">Switch between light and dark themes in the top-right corner.</p>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="search-overlay" role="dialog" aria-modal="true" aria-label="Search chapters" aria-hidden="true">
+    <div class="search-panel">
+      <div class="search-panel__head">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <input id="search-input" type="search" placeholder="Search chapter titles or summaries…"
+               autocomplete="off" spellcheck="false" aria-label="Search chapters">
+        <span class="search-panel__esc">Esc</span>
+      </div>
+      <ul class="search-results" id="search-results"></ul>
+      <div class="search-panel__foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> select</span>
+        <span><kbd>Enter</kbd> open</span>
+        <span><kbd>/</kbd> open search</span>
+        <span><kbd>[</kbd><kbd>]</kbd> previous / next chapter</span>
+      </div>
+    </div>
+  </div>
+
+  <noscript>
+    <p style="max-width:74ch;margin:1rem auto;padding:0 1rem;font-family:monospace;color:#6e675c">
+      The main content of this site is readable without JavaScript; search, theme switching, and progress tracking need it enabled.
+    </p>
+  </noscript>
+</body>
+</html>

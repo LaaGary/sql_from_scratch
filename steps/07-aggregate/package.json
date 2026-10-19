@@ -1,0 +1,21 @@
+{
+  "name": "sql-from-scratch",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A small SQL database engine built from scratch (teaching project, zero dependencies)",
+  "main": "src/index.js",
+  "bin": {
+    "sql-from-scratch": "bin/sql.js"
+  },
+  "scripts": {
+    "repl": "node bin/sql.js",
+    "test": "node --test",
+    "docs": "node tools/build-docs.mjs",
+    "serve": "node tools/serve.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chapter 2 · Lexing — Building an SQL database engine from scratch</title>
+  <meta name="description" content="Write a lexer from scratch that handles strings, numbers, comments, and operators, and remembers positions.">
+  <meta property="og:title" content="Chapter 2 · Lexing — Building an SQL database engine from scratch">
+  <meta property="og:description" content="Write a lexer from scratch that handles strings, numbers, comments, and operators, and remembers positions.">
+  <meta property="og:type" content="article">
+  <meta property="og:locale" content="en_US">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("sql-theme");
+        document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script defer src="../assets/toc.js"></script>
+  <script defer src="../assets/site.js"></script>
+</head>
+<body class="page page--chapter" data-page-kind="chapter"
+      data-prev-url="../chapters/ch01.html" data-next-url="../chapters/ch03.html">
+
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <div id="reading-progress" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="site-header__left">
+      <button id="sidebar-toggle" class="icon-btn" type="button"
+              aria-label="Open chapter navigation" aria-controls="sidebar" aria-expanded="false">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <path d="M2 4h12M2 8h12M2 12h12" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <a class="brand" href="../index.html">
+        <span class="brand__mark" aria-hidden="true">SQL</span>
+        <span class="brand__name">SQL from Scratch</span>
+      </a>
+      <span class="header-chapter">Chapter 2 · Lexing</span>
+    </div>
+    <div class="site-header__right">
+      <span class="header-progress" data-progress-label>0/10 complete</span>
+      <button id="search-toggle" class="icon-btn icon-btn--search" type="button"
+              aria-label="Search chapters" aria-haspopup="dialog">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <span class="icon-btn__label">Search</span>
+        <span class="kbd-hint">/</span>
+      </button>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
+        <svg class="theme-icon theme-icon--sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="8" cy="8" r="3"/>
+          <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" stroke-linecap="round"/>
+        </svg>
+        <svg class="theme-icon theme-icon--moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M13.4 9.6A5.8 5.8 0 0 1 6.4 2.6a5.8 5.8 0 1 0 7 7Z" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <aside class="sidebar" id="sidebar" aria-label="Chapter navigation">
+    <div class="sidebar__scroll">
+      <p class="sidebar__heading">Chapter Index</p>
+      <ol class="toc-list"><li class="toc-item"><a class="toc-link" href="../chapters/ch01.html"><span class="toc-num">01</span><span class="toc-title">Orientation and skeleton</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch02.html"><span class="toc-num">02</span><span class="toc-title">Lexing</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch03.html"><span class="toc-num">03</span><span class="toc-title">Parsing</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch04.html"><span class="toc-num">04</span><span class="toc-title">Values and types</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch05.html"><span class="toc-num">05</span><span class="toc-title">Storage layer</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch06.html"><span class="toc-num">06</span><span class="toc-title">SELECT pipeline</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch07.html"><span class="toc-num">07</span><span class="toc-title">Aggregates and grouping</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch08.html"><span class="toc-num">08</span><span class="toc-title">Update and delete</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch09.html"><span class="toc-num">09</span><span class="toc-title">JOIN</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch10.html"><span class="toc-num">10</span><span class="toc-title">Persistence and transactions</span></a></li></ol>
+      <p class="sidebar__heading">Tools</p>
+      <nav class="nav-list" aria-label="Tools">
+        <a class="toc-link" href="../playground.html"><span class="toc-num">▸</span><span class="toc-title">SQL Playground</span></a>
+        <a class="toc-link" href="../reference.html"><span class="toc-num">▸</span><span class="toc-title">Syntax Reference</span></a>
+        <a class="toc-link" href="../index.html"><span class="toc-num">▸</span><span class="toc-title">Home &amp; Roadmap</span></a>
+      </nav>
+    </div>
+    <div class="sidebar__foot">
+      <a href="../index.html"><span>Home</span><span>⌂</span></a>
+      <a href="../playground.html"><span>Playground</span><span>⟩</span></a>
+      <a href="../reference.html"><span>Reference</span><span>⌗</span></a>
+      <p class="sidebar__version">SQL engine tutorial · 0.1<br>Zero dependencies · works offline</p>
+    </div>
+  </aside>
+  <div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
+
+  <main id="main" class="layout">
+    <div class="content-column">
+      <aside class="chapter-meta">
+  <h2 class="chapter-meta__title">Chapter info</h2>
+  <ul class="chapter-meta__list">
+    <li><strong>Estimated time</strong> 45 minutes</li>
+    <li><strong>Difficulty</strong> ★★☆☆☆ Some familiarity with state machines</li>
+    <li><strong>What you'll learn</strong> Lexing, position tracking, comments and string escaping, error messages</li>
+    <li><strong>What you'll build</strong> <code>src/tokenizer.js</code>, <code>src/errors.js</code>, <code>tests/tokenizer.test.js</code></li>
+  </ul>
+</aside>
+
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Chapter 02 / Lexing</p>
+    <h1>Cutting SQL into tokens: the tokenizer</h1>
+    <p class="chapter-lead">
+      A computer doesn't understand the word "SELECT"; it only sees a stream of characters. The tokenizer's job is to
+      cut that stream into human-defined units and record where each unit appeared in the source text. It's the first
+      step of the whole compile pipeline, and the best one to warm up on.
+    </p>
+  </header>
+
+  <h2 id="goal">The input and output we want</h2>
+  <p>Here's a piece of SQL:</p>
+  <pre class="code"><code>SELECT name, COUNT(*) FROM books WHERE price &gt;= 100; -- find the pricier books</code></pre>
+  <p>The output is an array of tokens (type, value, position):</p>
+  <pre class="code"><code>[
+  { type: "word",   value: "SELECT", upper: "SELECT", line: 1, column: 1 },
+  { type: "word",   value: "name",   line: 1, column: 8 },
+  { type: "punct",  value: ",",      line: 1, column: 12 },
+  { type: "word",   value: "COUNT",  upper: "COUNT", line: 1, column: 14 },
+  ...
+  { type: "eof",    value: "",       line: 1, column: 60 }
+]</code></pre>
+  <p>
+    Notice a few things: comments never become tokens, strings lose their quotes, keywords always get an
+    <code>upper</code> field for easy comparison later, and the array always ends with an <code>eof</code>.
+    All of these choices make the parser easier to write.
+  </p>
+
+  <h2 id="errors">Write the error type first: error messages are part of the product</h2>
+  <p>
+    Before writing the tokenizer, create a shared error class. A good database tells you
+    "line 3, column 15: missing closing parenthesis" instead of throwing a bare
+    <code>Unexpected token</code>.
+  </p>
+  <p>
+    <code>SqlError</code> carries three fields: a stable <code>code</code> (so code can branch on the kind of error),
+    <code>position</code> (offset / line / column), and an optional <code>hint</code> (how to fix it).
+    Its <code>format(sql)</code> method renders the error with a caret:
+  </p>
+  <pre class="code"><code>SYNTAX_ERROR: expected an expression but found ';'
+ 1 | SELECT * FROM books WHERE ;
+   |                          ^
+Hint: ...</code></pre>
+
+  <div class="file"><div class="file__head"><span class="file__name">src/errors.js</span><span class="file__meta">JavaScript · 57 lines · step 2</span></div><pre class="code"><code><span class="tk-com">/**
+ * All SQL errors are wrapped in SqlError.
+ *
+ * A good database error message should tell the user three things:
+ *   1. where it failed (offset / line / column)
+ *   2. which character is wrong (print the offending SQL snippet and point at it with ^)
+ *   3. how to fix it (optional hint)
+ *
+ * This class is shared by the tokenizer, parser, and executor across the project.
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">class</span> <span class="tk-ident">SqlError</span> <span class="tk-kw">extends</span> <span class="tk-type">Error</span> <span class="tk-op">{</span>
+  <span class="tk-com">/**
+   * @param {string} message human-readable error message
+   * @param {object} [options]
+   * @param {string} [options.code] stable error code for programmatic checks (e.g. SYNTAX_ERROR)
+   * @param {{offset:number, line:number, column:number}|null} [options.position]
+   * @param {string|null} [options.hint] suggested fix
+   */</span>
+  <span class="tk-fn">constructor</span><span class="tk-op">(</span><span class="tk-ident">message</span><span class="tk-op">,</span> <span class="tk-op">{</span> <span class="tk-ident">code</span> <span class="tk-op">=</span> <span class="tk-str">&quot;SQL_ERROR&quot;</span><span class="tk-op">,</span> <span class="tk-ident">position</span> <span class="tk-op">=</span> <span class="tk-kw">null</span><span class="tk-op">,</span> <span class="tk-ident">hint</span> <span class="tk-op">=</span> <span class="tk-kw">null</span> <span class="tk-op">}</span> <span class="tk-op">=</span> <span class="tk-op">{</span><span class="tk-op">}</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">super</span><span class="tk-op">(</span><span class="tk-ident">message</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">name</span> <span class="tk-op">=</span> <span class="tk-str">&quot;SqlError&quot;</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">code</span> <span class="tk-op">=</span> <span class="tk-ident">code</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">position</span> <span class="tk-op">=</span> <span class="tk-ident">position</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">hint</span> <span class="tk-op">=</span> <span class="tk-ident">hint</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/**
+   * Format the error as a multi-line string suitable for printing in a terminal:
+   *
+   *   SYNTAX_ERROR: expected ...
+   *     SELECT * FROM
+   *                  ^
+   *   hint: ...
+   */</span>
+  <span class="tk-fn">format</span><span class="tk-op">(</span><span class="tk-ident">source</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">lines</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-str">`${this.code}: ${this.message}`</span><span class="tk-op">]</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">source</span> <span class="tk-op">&amp;</span><span class="tk-op">&amp;</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">position</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">const</span> <span class="tk-op">{</span> <span class="tk-ident">line</span><span class="tk-op">,</span> <span class="tk-ident">column</span> <span class="tk-op">}</span> <span class="tk-op">=</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">position</span><span class="tk-op">;</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">text</span> <span class="tk-op">=</span> <span class="tk-ident">source</span><span class="tk-op">.</span><span class="tk-fn">split</span><span class="tk-op">(</span><span class="tk-op">/</span>\<span class="tk-ident">r</span><span class="tk-op">?</span>\<span class="tk-ident">n</span><span class="tk-op">/</span><span class="tk-op">)</span><span class="tk-op">[</span><span class="tk-ident">line</span> <span class="tk-op">-</span> <span class="tk-num">1</span><span class="tk-op">]</span> <span class="tk-op">?</span><span class="tk-op">?</span> <span class="tk-str">&quot;&quot;</span><span class="tk-op">;</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">gutter</span> <span class="tk-op">=</span> <span class="tk-type">String</span><span class="tk-op">(</span><span class="tk-ident">line</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">;</span>
+      <span class="tk-ident">lines</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-str">`${&quot; &quot;.repeat(gutter)} |`</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-ident">lines</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-str">`${line} | ${text}`</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-ident">lines</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-str">`${&quot; &quot;.repeat(gutter)} | ${&quot; &quot;.repeat(Math.max(0, column - 1))}^`</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">hint</span><span class="tk-op">)</span> <span class="tk-ident">lines</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-str">`Hint: ${this.hint}`</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-ident">lines</span><span class="tk-op">.</span><span class="tk-fn">join</span><span class="tk-op">(</span><span class="tk-str">&quot;\n&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Convenience helper for creating syntax errors. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">syntaxError</span><span class="tk-op">(</span><span class="tk-ident">message</span><span class="tk-op">,</span> <span class="tk-ident">token</span><span class="tk-op">,</span> <span class="tk-ident">hint</span> <span class="tk-op">=</span> <span class="tk-kw">null</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">return</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-ident">message</span><span class="tk-op">,</span> <span class="tk-op">{</span>
+    <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;SYNTAX_ERROR&quot;</span><span class="tk-op">,</span>
+    <span class="tk-ident">position</span><span class="tk-op">:</span> <span class="tk-ident">token</span> <span class="tk-op">?</span> <span class="tk-op">{</span> <span class="tk-ident">offset</span><span class="tk-op">:</span> <span class="tk-ident">token</span><span class="tk-op">.</span><span class="tk-ident">start</span><span class="tk-op">,</span> <span class="tk-ident">line</span><span class="tk-op">:</span> <span class="tk-ident">token</span><span class="tk-op">.</span><span class="tk-ident">line</span><span class="tk-op">,</span> <span class="tk-ident">column</span><span class="tk-op">:</span> <span class="tk-ident">token</span><span class="tk-op">.</span><span class="tk-ident">column</span> <span class="tk-op">}</span> <span class="tk-op">:</span> <span class="tk-kw">null</span><span class="tk-op">,</span>
+    <span class="tk-ident">hint</span><span class="tk-op">,</span>
+  <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span></code></pre></div>
+
+  <h2 id="scan">Scanning: move forward one character at a time</h2>
+  <p>
+    The most direct implementation is a <code>while</code> loop with an index <code>i</code>: look at the current
+    character and decide how many characters to consume. That's a small state machine.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>What you see</th><th>Action</th><th>Emits token</th></tr></thead>
+      <tbody>
+        <tr><td>Whitespace, newline</td><td>Advance and update the line counter</td><td>No</td></tr>
+        <tr><td><code>--</code></td><td>Consume to end of line</td><td>No</td></tr>
+        <tr><td><code>/*</code></td><td>Consume through <code>*/</code></td><td>No</td></tr>
+        <tr><td><code>'...'</code></td><td>Handle <code>''</code> escaping</td><td><code>string</code></td></tr>
+        <tr><td>Starts with a digit</td><td>Read integer / decimal / exponent</td><td><code>number</code></td></tr>
+        <tr><td>Letter or <code>_</code></td><td>Read the whole identifier</td><td><code>word</code></td></tr>
+        <tr><td><code>+ - * / % = &lt; &gt; !</code></td><td>Try the two-character operator first (<code>&gt;=</code>)</td><td><code>op</code></td></tr>
+        <tr><td><code>( ) , ; .</code></td><td>Single character</td><td><code>punct</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Two easy traps: first, <strong>compare operators longest-first</strong>, or <code>&gt;=</code> is split into
+    <code>&gt;</code> and <code>=</code>. Second, <strong>record the position before consuming characters</strong>,
+    or the error message points at the next character.
+  </p>
+
+  <div class="file"><div class="file__head"><span class="file__name">src/tokenizer.js</span><span class="file__meta">JavaScript · 286 lines · step 2</span></div><pre class="code"><code><span class="tk-com">/**
+ * Tokenizer / Lexer
+ *
+ * Split a SQL string into tokens. This layer only recognizes tokens;
+ * it does not understand grammar, so it is simple and easy to test:
+ *
+ *   SELECT name FROM books WHERE price &gt; 100;
+ *
+ *   -&gt; word(SELECT) word(name) word(FROM) word(books) word(WHERE)
+ *      word(price) op(&gt;) number(100) punct(;)
+ *
+ * Design notes:
+ *   - each token records its position in the source string (offset/line/column),
+ *     so error messages can point at the exact spot.
+ *   - keywords get no special token type; they are all words, and the parser checks upper.
+ *     This lets keywords be used as column names (when double-quoted) and keeps the implementation simple.
+ *   - supports line comments, block comments, single-quoted strings, and double-quoted/backtick identifiers.
+ */</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">SqlError</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;./errors.js&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-com">/** Keyword table: the parser uses it to decide whether a word is a reserved word. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">const</span> <span class="tk-ident">KEYWORDS</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-type">Set</span><span class="tk-op">(</span>
+  <span class="tk-str">`SELECT FROM WHERE GROUP BY HAVING ORDER LIMIT OFFSET
+   INSERT INTO VALUES UPDATE SET DELETE CREATE TABLE DROP
+   IF NOT EXISTS PRIMARY KEY UNIQUE DEFAULT NULL AND OR AS DISTINCT
+   JOIN INNER LEFT OUTER ON USING BEGIN COMMIT ROLLBACK TRANSACTION
+   TRUE FALSE IS LIKE BETWEEN IN ASC DESC INTEGER INT REAL TEXT BLOB
+   NUMERIC BOOLEAN CHAR VARCHAR`</span><span class="tk-op">.</span><span class="tk-fn">split</span><span class="tk-op">(</span><span class="tk-op">/</span>\<span class="tk-ident">s</span><span class="tk-op">+</span><span class="tk-op">/</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">filter</span><span class="tk-op">(</span><span class="tk-type">Boolean</span><span class="tk-op">)</span>
+<span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-com">/** Single-character punctuation. */</span>
+<span class="tk-kw">const</span> <span class="tk-ident">PUNCTUATION</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-type">Set</span><span class="tk-op">(</span><span class="tk-op">[</span><span class="tk-str">&quot;(&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;)&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;,&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;;&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;.&quot;</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-com">/** Sorted longest-first so '&gt;=' is not split into '&gt;' and '='. */</span>
+<span class="tk-kw">const</span> <span class="tk-ident">OPERATORS</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-str">&quot;||&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;&lt;=&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;&gt;=&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;&lt;&gt;&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;!=&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;==&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;=&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;&lt;&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;&gt;&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;+&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;-&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;*&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;/&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;%&quot;</span><span class="tk-op">]</span><span class="tk-op">;</span>
+
+<span class="tk-com">/** @typedef {&quot;word&quot;|&quot;number&quot;|&quot;string&quot;|&quot;punct&quot;|&quot;op&quot;|&quot;eof&quot;} TokenType */</span>
+
+<span class="tk-com">/**
+ * @typedef {object} Token
+ * @property {TokenType} type
+ * @property {string} value    decoded value (strings are unquoted; words keep the original text)
+ * @property {string} text     raw text (used in error messages)
+ * @property {string} [upper]  uppercase form of word, for keyword comparison
+ * @property {boolean} [quoted] whether the identifier is wrapped in &quot;...&quot; or `...`
+ * @property {number} start    starting offset in the source string
+ * @property {number} end      end offset (exclusive)
+ * @property {number} line     1-based line number
+ * @property {number} column   1-based column number
+ */</span>
+
+<span class="tk-com">/**
+ * Split SQL into an array of tokens; the last token is always eof.
+ * @param {string} source
+ * @returns {Token[]}
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">tokenize</span><span class="tk-op">(</span><span class="tk-ident">source</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">tokens</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+  <span class="tk-kw">let</span> <span class="tk-ident">i</span> <span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+  <span class="tk-kw">let</span> <span class="tk-ident">line</span> <span class="tk-op">=</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+  <span class="tk-kw">let</span> <span class="tk-ident">lineStart</span> <span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">;</span> <span class="tk-com">// offset where the current line starts, used to compute column</span>
+
+  <span class="tk-kw">const</span> <span class="tk-ident">columnAt</span> <span class="tk-op">=</span> <span class="tk-op">(</span><span class="tk-ident">offset</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">offset</span> <span class="tk-op">-</span> <span class="tk-ident">lineStart</span> <span class="tk-op">+</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+
+  <span class="tk-com">/** Advance one character and maintain the line number. */</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">advance</span> <span class="tk-op">=</span> <span class="tk-op">(</span><span class="tk-ident">count</span> <span class="tk-op">=</span> <span class="tk-num">1</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">let</span> <span class="tk-ident">k</span> <span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">;</span> <span class="tk-ident">k</span> <span class="tk-op">&lt;</span> <span class="tk-ident">count</span><span class="tk-op">;</span> <span class="tk-ident">k</span><span class="tk-op">+</span><span class="tk-op">+</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;\n&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-ident">line</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+        <span class="tk-ident">lineStart</span> <span class="tk-op">=</span> <span class="tk-ident">i</span> <span class="tk-op">+</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+      <span class="tk-ident">i</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+  <span class="tk-op">}</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">const</span> <span class="tk-ident">makeToken</span> <span class="tk-op">=</span> <span class="tk-op">(</span><span class="tk-ident">type</span><span class="tk-op">,</span> <span class="tk-ident">value</span><span class="tk-op">,</span> <span class="tk-ident">start</span><span class="tk-op">,</span> <span class="tk-ident">extra</span> <span class="tk-op">=</span> <span class="tk-op">{</span><span class="tk-op">}</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">(</span><span class="tk-op">{</span>
+    <span class="tk-ident">type</span><span class="tk-op">,</span>
+    <span class="tk-ident">value</span><span class="tk-op">,</span>
+    <span class="tk-ident">text</span><span class="tk-op">:</span> <span class="tk-ident">source</span><span class="tk-op">.</span><span class="tk-fn">slice</span><span class="tk-op">(</span><span class="tk-ident">start</span><span class="tk-op">,</span> <span class="tk-ident">i</span><span class="tk-op">)</span><span class="tk-op">,</span>
+    <span class="tk-ident">start</span><span class="tk-op">,</span>
+    <span class="tk-ident">end</span><span class="tk-op">:</span> <span class="tk-ident">i</span><span class="tk-op">,</span>
+    <span class="tk-ident">line</span><span class="tk-op">:</span> <span class="tk-ident">startLine</span><span class="tk-op">,</span>
+    <span class="tk-ident">column</span><span class="tk-op">:</span> <span class="tk-ident">startColumn</span><span class="tk-op">,</span>
+    <span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-ident">extra</span><span class="tk-op">,</span>
+  <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+  <span class="tk-com">/** Scan from the current position to end of line, skipping a -- comment. */</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">skipLineComment</span> <span class="tk-op">=</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+    <span class="tk-kw">while</span> <span class="tk-op">(</span><span class="tk-ident">i</span> <span class="tk-op">&lt;</span> <span class="tk-ident">source</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">&amp;</span><span class="tk-op">&amp;</span> <span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;\n&quot;</span><span class="tk-op">)</span> <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">const</span> <span class="tk-ident">skipBlockComment</span> <span class="tk-op">=</span> <span class="tk-op">(</span><span class="tk-ident">start</span><span class="tk-op">,</span> <span class="tk-ident">startLine</span><span class="tk-op">,</span> <span class="tk-ident">startColumn</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+    <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-num">2</span><span class="tk-op">)</span><span class="tk-op">;</span> <span class="tk-com">// consume /*</span>
+    <span class="tk-kw">while</span> <span class="tk-op">(</span><span class="tk-ident">i</span> <span class="tk-op">&lt;</span> <span class="tk-ident">source</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;*&quot;</span> <span class="tk-op">&amp;</span><span class="tk-op">&amp;</span> <span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span> <span class="tk-op">+</span> <span class="tk-num">1</span><span class="tk-op">]</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;/&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-num">2</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-kw">return</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+      <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">&quot;unterminated block comment (missing */)&quot;</span><span class="tk-op">,</span> <span class="tk-op">{</span>
+      <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;SYNTAX_ERROR&quot;</span><span class="tk-op">,</span>
+      <span class="tk-ident">position</span><span class="tk-op">:</span> <span class="tk-op">{</span> <span class="tk-ident">offset</span><span class="tk-op">:</span> <span class="tk-ident">start</span><span class="tk-op">,</span> <span class="tk-ident">line</span><span class="tk-op">:</span> <span class="tk-ident">startLine</span><span class="tk-op">,</span> <span class="tk-ident">column</span><span class="tk-op">:</span> <span class="tk-ident">startColumn</span> <span class="tk-op">}</span><span class="tk-op">,</span>
+    <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">let</span> <span class="tk-ident">startLine</span> <span class="tk-op">=</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+  <span class="tk-kw">let</span> <span class="tk-ident">startColumn</span> <span class="tk-op">=</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">while</span> <span class="tk-op">(</span><span class="tk-ident">i</span> <span class="tk-op">&lt;</span> <span class="tk-ident">source</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">ch</span> <span class="tk-op">=</span> <span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span><span class="tk-op">;</span>
+
+    <span class="tk-com">// --- whitespace ---</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">ch</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot; &quot;</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">ch</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;\t&quot;</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">ch</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;\r&quot;</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">ch</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;\n&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">continue</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+
+    <span class="tk-ident">startLine</span> <span class="tk-op">=</span> <span class="tk-ident">line</span><span class="tk-op">;</span>
+    <span class="tk-ident">startColumn</span> <span class="tk-op">=</span> <span class="tk-fn">columnAt</span><span class="tk-op">(</span><span class="tk-ident">i</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">start</span> <span class="tk-op">=</span> <span class="tk-ident">i</span><span class="tk-op">;</span>
+
+    <span class="tk-com">// --- comments ---</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">ch</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;-&quot;</span> <span class="tk-op">&amp;</span><span class="tk-op">&amp;</span> <span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span> <span class="tk-op">+</span> <span class="tk-num">1</span><span class="tk-op">]</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;-&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-fn">skipLineComment</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">continue</span><span class="tk-op">;</span> <span class="tk-com">// comments are not tokens</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">ch</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;/&quot;</span> <span class="tk-op">&amp;</span><span class="tk-op">&amp;</span> <span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span> <span class="tk-op">+</span> <span class="tk-num">1</span><span class="tk-op">]</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;*&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-fn">skipBlockComment</span><span class="tk-op">(</span><span class="tk-ident">start</span><span class="tk-op">,</span> <span class="tk-ident">startLine</span><span class="tk-op">,</span> <span class="tk-ident">startColumn</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">continue</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+
+    <span class="tk-com">// --- strings: '...', two consecutive single quotes stand for one single quote ---</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">ch</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;'&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span> <span class="tk-com">// opening quote</span>
+      <span class="tk-kw">let</span> <span class="tk-ident">value</span> <span class="tk-op">=</span> <span class="tk-str">&quot;&quot;</span><span class="tk-op">;</span>
+      <span class="tk-kw">let</span> <span class="tk-ident">closed</span> <span class="tk-op">=</span> <span class="tk-kw">false</span><span class="tk-op">;</span>
+      <span class="tk-kw">while</span> <span class="tk-op">(</span><span class="tk-ident">i</span> <span class="tk-op">&lt;</span> <span class="tk-ident">source</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-kw">const</span> <span class="tk-ident">c</span> <span class="tk-op">=</span> <span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span><span class="tk-op">;</span>
+        <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">c</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;'&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+          <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span> <span class="tk-op">+</span> <span class="tk-num">1</span><span class="tk-op">]</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;'&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+            <span class="tk-ident">value</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-str">&quot;'&quot;</span><span class="tk-op">;</span>
+            <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-num">2</span><span class="tk-op">)</span><span class="tk-op">;</span>
+            <span class="tk-kw">continue</span><span class="tk-op">;</span>
+          <span class="tk-op">}</span>
+          <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span> <span class="tk-com">// closing quote</span>
+          <span class="tk-ident">closed</span> <span class="tk-op">=</span> <span class="tk-kw">true</span><span class="tk-op">;</span>
+          <span class="tk-kw">break</span><span class="tk-op">;</span>
+        <span class="tk-op">}</span>
+        <span class="tk-ident">value</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-ident">c</span><span class="tk-op">;</span>
+        <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">closed</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">&quot;unterminated string (missing closing quote)&quot;</span><span class="tk-op">,</span> <span class="tk-op">{</span>
+          <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;SYNTAX_ERROR&quot;</span><span class="tk-op">,</span>
+          <span class="tk-ident">position</span><span class="tk-op">:</span> <span class="tk-op">{</span> <span class="tk-ident">offset</span><span class="tk-op">:</span> <span class="tk-ident">start</span><span class="tk-op">,</span> <span class="tk-ident">line</span><span class="tk-op">:</span> <span class="tk-ident">startLine</span><span class="tk-op">,</span> <span class="tk-ident">column</span><span class="tk-op">:</span> <span class="tk-ident">startColumn</span> <span class="tk-op">}</span><span class="tk-op">,</span>
+        <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+      <span class="tk-ident">tokens</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-fn">makeToken</span><span class="tk-op">(</span><span class="tk-str">&quot;string&quot;</span><span class="tk-op">,</span> <span class="tk-ident">value</span><span class="tk-op">,</span> <span class="tk-ident">start</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">continue</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+
+    <span class="tk-com">// --- identifier / keyword: double-quoted or backticked forms may contain spaces ---</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">ch</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">'&quot;'</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">ch</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;`&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">quote</span> <span class="tk-op">=</span> <span class="tk-ident">ch</span><span class="tk-op">;</span>
+      <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">let</span> <span class="tk-ident">value</span> <span class="tk-op">=</span> <span class="tk-str">&quot;&quot;</span><span class="tk-op">;</span>
+      <span class="tk-kw">let</span> <span class="tk-ident">closed</span> <span class="tk-op">=</span> <span class="tk-kw">false</span><span class="tk-op">;</span>
+      <span class="tk-kw">while</span> <span class="tk-op">(</span><span class="tk-ident">i</span> <span class="tk-op">&lt;</span> <span class="tk-ident">source</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-kw">const</span> <span class="tk-ident">c</span> <span class="tk-op">=</span> <span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span><span class="tk-op">;</span>
+        <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">c</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">quote</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+          <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span> <span class="tk-op">+</span> <span class="tk-num">1</span><span class="tk-op">]</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">quote</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+            <span class="tk-ident">value</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-ident">quote</span><span class="tk-op">;</span>
+            <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-num">2</span><span class="tk-op">)</span><span class="tk-op">;</span>
+            <span class="tk-kw">continue</span><span class="tk-op">;</span>
+          <span class="tk-op">}</span>
+          <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+          <span class="tk-ident">closed</span> <span class="tk-op">=</span> <span class="tk-kw">true</span><span class="tk-op">;</span>
+          <span class="tk-kw">break</span><span class="tk-op">;</span>
+        <span class="tk-op">}</span>
+        <span class="tk-ident">value</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-ident">c</span><span class="tk-op">;</span>
+        <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">closed</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">`unterminated identifier (missing ${quote})`</span><span class="tk-op">,</span> <span class="tk-op">{</span>
+          <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;SYNTAX_ERROR&quot;</span><span class="tk-op">,</span>
+          <span class="tk-ident">position</span><span class="tk-op">:</span> <span class="tk-op">{</span> <span class="tk-ident">offset</span><span class="tk-op">:</span> <span class="tk-ident">start</span><span class="tk-op">,</span> <span class="tk-ident">line</span><span class="tk-op">:</span> <span class="tk-ident">startLine</span><span class="tk-op">,</span> <span class="tk-ident">column</span><span class="tk-op">:</span> <span class="tk-ident">startColumn</span> <span class="tk-op">}</span><span class="tk-op">,</span>
+        <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+      <span class="tk-ident">tokens</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-fn">makeToken</span><span class="tk-op">(</span><span class="tk-str">&quot;word&quot;</span><span class="tk-op">,</span> <span class="tk-ident">value</span><span class="tk-op">,</span> <span class="tk-ident">start</span><span class="tk-op">,</span> <span class="tk-op">{</span> <span class="tk-ident">upper</span><span class="tk-op">:</span> <span class="tk-ident">value</span><span class="tk-op">.</span><span class="tk-fn">toUpperCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-ident">quoted</span><span class="tk-op">:</span> <span class="tk-kw">true</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">continue</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+
+    <span class="tk-com">// --- numbers: 12, 3.14, .5, 1e3, 2.5E-2 ---</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-fn">isDigit</span><span class="tk-op">(</span><span class="tk-ident">ch</span><span class="tk-op">)</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-op">(</span><span class="tk-ident">ch</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;.&quot;</span> <span class="tk-op">&amp;</span><span class="tk-op">&amp;</span> <span class="tk-fn">isDigit</span><span class="tk-op">(</span><span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span> <span class="tk-op">+</span> <span class="tk-num">1</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">while</span> <span class="tk-op">(</span><span class="tk-fn">isDigit</span><span class="tk-op">(</span><span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;.&quot;</span> <span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-kw">while</span> <span class="tk-op">(</span><span class="tk-fn">isDigit</span><span class="tk-op">(</span><span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;e&quot;</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;E&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-kw">const</span> <span class="tk-ident">save</span> <span class="tk-op">=</span> <span class="tk-ident">i</span><span class="tk-op">;</span>
+        <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;+&quot;</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;-&quot;</span><span class="tk-op">)</span> <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-fn">isDigit</span><span class="tk-op">(</span><span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+          <span class="tk-ident">i</span> <span class="tk-op">=</span> <span class="tk-ident">save</span><span class="tk-op">;</span> <span class="tk-com">// not an exponent, rewind (e.g. 1e followed by whitespace)</span>
+        <span class="tk-op">}</span> <span class="tk-kw">else</span> <span class="tk-op">{</span>
+          <span class="tk-kw">while</span> <span class="tk-op">(</span><span class="tk-fn">isDigit</span><span class="tk-op">(</span><span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-op">}</span>
+      <span class="tk-op">}</span>
+      <span class="tk-ident">tokens</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-fn">makeToken</span><span class="tk-op">(</span><span class="tk-str">&quot;number&quot;</span><span class="tk-op">,</span> <span class="tk-ident">source</span><span class="tk-op">.</span><span class="tk-fn">slice</span><span class="tk-op">(</span><span class="tk-ident">start</span><span class="tk-op">,</span> <span class="tk-ident">i</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-ident">start</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">continue</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+
+    <span class="tk-com">// --- identifier / keyword ---</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-fn">isIdentStart</span><span class="tk-op">(</span><span class="tk-ident">ch</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">while</span> <span class="tk-op">(</span><span class="tk-fn">isIdentPart</span><span class="tk-op">(</span><span class="tk-ident">source</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">value</span> <span class="tk-op">=</span> <span class="tk-ident">source</span><span class="tk-op">.</span><span class="tk-fn">slice</span><span class="tk-op">(</span><span class="tk-ident">start</span><span class="tk-op">,</span> <span class="tk-ident">i</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-ident">tokens</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-fn">makeToken</span><span class="tk-op">(</span><span class="tk-str">&quot;word&quot;</span><span class="tk-op">,</span> <span class="tk-ident">value</span><span class="tk-op">,</span> <span class="tk-ident">start</span><span class="tk-op">,</span> <span class="tk-op">{</span> <span class="tk-ident">upper</span><span class="tk-op">:</span> <span class="tk-ident">value</span><span class="tk-op">.</span><span class="tk-fn">toUpperCase</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">continue</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+
+    <span class="tk-com">// --- punctuation ---</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">PUNCTUATION</span><span class="tk-op">.</span><span class="tk-fn">has</span><span class="tk-op">(</span><span class="tk-ident">ch</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-ident">tokens</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-fn">makeToken</span><span class="tk-op">(</span><span class="tk-str">&quot;punct&quot;</span><span class="tk-op">,</span> <span class="tk-ident">ch</span><span class="tk-op">,</span> <span class="tk-ident">start</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">continue</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+
+    <span class="tk-com">// --- operators (try the two-character forms first) ---</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">two</span> <span class="tk-op">=</span> <span class="tk-ident">source</span><span class="tk-op">.</span><span class="tk-fn">slice</span><span class="tk-op">(</span><span class="tk-ident">i</span><span class="tk-op">,</span> <span class="tk-ident">i</span> <span class="tk-op">+</span> <span class="tk-num">2</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">OPERATORS</span><span class="tk-op">.</span><span class="tk-fn">includes</span><span class="tk-op">(</span><span class="tk-ident">two</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-num">2</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-ident">tokens</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-fn">makeToken</span><span class="tk-op">(</span><span class="tk-str">&quot;op&quot;</span><span class="tk-op">,</span> <span class="tk-ident">two</span><span class="tk-op">,</span> <span class="tk-ident">start</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">continue</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">OPERATORS</span><span class="tk-op">.</span><span class="tk-fn">includes</span><span class="tk-op">(</span><span class="tk-ident">ch</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-fn">advance</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-ident">tokens</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-fn">makeToken</span><span class="tk-op">(</span><span class="tk-str">&quot;op&quot;</span><span class="tk-op">,</span> <span class="tk-ident">ch</span><span class="tk-op">,</span> <span class="tk-ident">start</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">continue</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+
+    <span class="tk-com">// --- anything else is unrecognized ---</span>
+    <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">`unrecognized character '${ch}'`</span><span class="tk-op">,</span> <span class="tk-op">{</span>
+      <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;SYNTAX_ERROR&quot;</span><span class="tk-op">,</span>
+      <span class="tk-ident">position</span><span class="tk-op">:</span> <span class="tk-op">{</span> <span class="tk-ident">offset</span><span class="tk-op">:</span> <span class="tk-ident">start</span><span class="tk-op">,</span> <span class="tk-ident">line</span><span class="tk-op">:</span> <span class="tk-ident">startLine</span><span class="tk-op">,</span> <span class="tk-ident">column</span><span class="tk-op">:</span> <span class="tk-ident">startColumn</span> <span class="tk-op">}</span><span class="tk-op">,</span>
+    <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-ident">tokens</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-op">{</span>
+    <span class="tk-ident">type</span><span class="tk-op">:</span> <span class="tk-str">&quot;eof&quot;</span><span class="tk-op">,</span>
+    <span class="tk-ident">value</span><span class="tk-op">:</span> <span class="tk-str">&quot;&quot;</span><span class="tk-op">,</span>
+    <span class="tk-ident">text</span><span class="tk-op">:</span> <span class="tk-str">&quot;&quot;</span><span class="tk-op">,</span>
+    <span class="tk-ident">start</span><span class="tk-op">:</span> <span class="tk-ident">i</span><span class="tk-op">,</span>
+    <span class="tk-ident">end</span><span class="tk-op">:</span> <span class="tk-ident">i</span><span class="tk-op">,</span>
+    <span class="tk-ident">line</span><span class="tk-op">,</span>
+    <span class="tk-ident">column</span><span class="tk-op">:</span> <span class="tk-fn">columnAt</span><span class="tk-op">(</span><span class="tk-ident">i</span><span class="tk-op">)</span><span class="tk-op">,</span>
+  <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">tokens</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-kw">function</span> <span class="tk-fn">isDigit</span><span class="tk-op">(</span><span class="tk-ident">ch</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">ch</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">undefined</span> <span class="tk-op">&amp;</span><span class="tk-op">&amp;</span> <span class="tk-ident">ch</span> <span class="tk-op">&gt;</span><span class="tk-op">=</span> <span class="tk-str">&quot;0&quot;</span> <span class="tk-op">&amp;</span><span class="tk-op">&amp;</span> <span class="tk-ident">ch</span> <span class="tk-op">&lt;</span><span class="tk-op">=</span> <span class="tk-str">&quot;9&quot;</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-kw">function</span> <span class="tk-fn">isIdentStart</span><span class="tk-op">(</span><span class="tk-ident">ch</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">ch</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">undefined</span> <span class="tk-op">&amp;</span><span class="tk-op">&amp;</span> <span class="tk-op">(</span><span class="tk-ident">ch</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;_&quot;</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-op">(</span><span class="tk-ident">ch</span> <span class="tk-op">&gt;</span><span class="tk-op">=</span> <span class="tk-str">&quot;a&quot;</span> <span class="tk-op">&amp;</span><span class="tk-op">&amp;</span> <span class="tk-ident">ch</span> <span class="tk-op">&lt;</span><span class="tk-op">=</span> <span class="tk-str">&quot;z&quot;</span><span class="tk-op">)</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-op">(</span><span class="tk-ident">ch</span> <span class="tk-op">&gt;</span><span class="tk-op">=</span> <span class="tk-str">&quot;A&quot;</span> <span class="tk-op">&amp;</span><span class="tk-op">&amp;</span> <span class="tk-ident">ch</span> <span class="tk-op">&lt;</span><span class="tk-op">=</span> <span class="tk-str">&quot;Z&quot;</span><span class="tk-op">)</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">ch</span><span class="tk-op">.</span><span class="tk-fn">charCodeAt</span><span class="tk-op">(</span><span class="tk-num">0</span><span class="tk-op">)</span> <span class="tk-op">&gt;</span> <span class="tk-num">127</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-kw">function</span> <span class="tk-fn">isIdentPart</span><span class="tk-op">(</span><span class="tk-ident">ch</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">return</span> <span class="tk-fn">isIdentStart</span><span class="tk-op">(</span><span class="tk-ident">ch</span><span class="tk-op">)</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-fn">isDigit</span><span class="tk-op">(</span><span class="tk-ident">ch</span><span class="tk-op">)</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">ch</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;$&quot;</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/**
+ * Turn a chunk of SQL into a human-readable token summary; the REPL's .tokens command uses it.
+ * @param {string} sql
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">describeTokens</span><span class="tk-op">(</span><span class="tk-ident">sql</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">return</span> <span class="tk-fn">tokenize</span><span class="tk-op">(</span><span class="tk-ident">sql</span><span class="tk-op">)</span>
+    <span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">t</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">t</span><span class="tk-op">.</span><span class="tk-ident">type</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;eof&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-str">&quot;eof&quot;</span><span class="tk-op">;</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">value</span> <span class="tk-op">=</span> <span class="tk-ident">t</span><span class="tk-op">.</span><span class="tk-ident">type</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;string&quot;</span> <span class="tk-op">?</span> <span class="tk-ident">JSON</span><span class="tk-op">.</span><span class="tk-fn">stringify</span><span class="tk-op">(</span><span class="tk-ident">t</span><span class="tk-op">.</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">:</span> <span class="tk-ident">t</span><span class="tk-op">.</span><span class="tk-ident">text</span><span class="tk-op">;</span>
+      <span class="tk-kw">return</span> <span class="tk-str">`${t.type}(${value})`</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span><span class="tk-op">)</span>
+    <span class="tk-op">.</span><span class="tk-fn">join</span><span class="tk-op">(</span><span class="tk-str">&quot; &quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span></code></pre></div>
+
+  <h2 id="positions">How are line and column numbers computed?</h2>
+  <p>
+    We only need to remember where the current line starts (<code>lineStart</code>).
+    The current column = current offset − lineStart + 1. Every time we consume a newline, increment
+    <code>line</code> and set <code>lineStart</code> to the position of the next character.
+  </p>
+  <p>
+    This approach doesn't need to scan the whole document up front, and it won't miscount on CJK text or emoji,
+    because we measure the <strong>offset</strong>, not the visual width. Terminal display is a separate concern
+    (chapter 6's table output handles full-width characters).
+  </p>
+
+  <h2 id="design">Why don't keywords get their own token type?</h2>
+  <p>
+    Some tutorials tag <code>SELECT</code> as <code>KEYWORD</code> and everything else as <code>IDENTIFIER</code>.
+    We deliberately don't: everything is a <code>word</code>, and the layer above checks it with <code>upper</code>.
+    The benefits:
+  </p>
+  <ul>
+    <li>The tokenizer doesn't need to know how many keywords SQL has (though we still keep a keyword table for the parser).</li>
+    <li>Supporting "use a double-quoted reserved word as a column name" is easy: a word with <code>quoted: true</code> doesn't take part in keyword comparison.</li>
+    <li>When new syntax arrives later (for example <code>RETURNING</code>), the tokenizer barely changes.</li>
+  </ul>
+
+  <div class="callout callout--note">
+    <p class="callout__title">Why not just split with a regular expression?</p>
+    <p>
+      <code>sql.split(/\s+/)</code> or one big regex works for simple cases, but you'll soon hit whitespace inside
+      strings (<code>'hello world'</code>), semicolons inside comments, escape characters, and so on.
+      A hand-written scanner is a bit more code, but every branch is visible and errors are easy to locate.
+    </p>
+  </div>
+
+  <h2 id="cli">Make the tokenizer visible in the REPL</h2>
+  <p>
+    Add a <code>.tokens &lt;SQL&gt;</code> command to the CLI. It's a great debugging tool: when the parser misbehaves
+    later, check the tokens first — that usually narrows things down.
+  </p>
+  <pre class="code"><code>.tokens SELECT name FROM books WHERE price &gt;= 100
+word(SELECT) word(name) word(FROM) word(books) word(WHERE) word(price) op(&gt;=) number(100) eof</code></pre>
+
+  <h2 id="tests">Tests: write them first, then trust the code</h2>
+  <p>
+    The tokenizer is the easiest part to unit-test: the input is a string, the output is plain data, and there are no
+    side effects. The tests below cover keyword case, number formats, string escaping, comments, positions, and errors.
+  </p>
+
+  <div class="file"><div class="file__head"><span class="file__name">tests/tokenizer.test.js</span><span class="file__meta">JavaScript · 90 lines · step 2</span></div><pre class="code"><code><span class="tk-kw">import</span> <span class="tk-ident">test</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:test&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-ident">assert</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:assert/strict&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">tokenize</span><span class="tk-op">,</span> <span class="tk-ident">describeTokens</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;../src/tokenizer.js&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">SqlError</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;../src/errors.js&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-kw">const</span> <span class="tk-ident">types</span> <span class="tk-op">=</span> <span class="tk-op">(</span><span class="tk-ident">sql</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-fn">tokenize</span><span class="tk-op">(</span><span class="tk-ident">sql</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">t</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">t</span><span class="tk-op">.</span><span class="tk-ident">type</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-kw">const</span> <span class="tk-ident">values</span> <span class="tk-op">=</span> <span class="tk-op">(</span><span class="tk-ident">sql</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-fn">tokenize</span><span class="tk-op">(</span><span class="tk-ident">sql</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">filter</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">t</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">t</span><span class="tk-op">.</span><span class="tk-ident">type</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;eof&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">t</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">t</span><span class="tk-op">.</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;an empty string yields only eof&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">tokens</span> <span class="tk-op">=</span> <span class="tk-fn">tokenize</span><span class="tk-op">(</span><span class="tk-str">&quot;&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">tokens</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">tokens</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">.</span><span class="tk-ident">type</span><span class="tk-op">,</span> <span class="tk-str">&quot;eof&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;a basic SELECT tokenizes into the right tokens&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-fn">values</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT name FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;SELECT&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;name&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;FROM&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;books&quot;</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-fn">types</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT name FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;word&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;word&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;word&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;word&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;eof&quot;</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;keywords are case-insensitive and upper is always uppercase&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">tokens</span> <span class="tk-op">=</span> <span class="tk-fn">tokenize</span><span class="tk-op">(</span><span class="tk-str">&quot;select SeLeCt from&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">tokens</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">.</span><span class="tk-ident">upper</span><span class="tk-op">,</span> <span class="tk-str">&quot;SELECT&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">tokens</span><span class="tk-op">[</span><span class="tk-num">1</span><span class="tk-op">]</span><span class="tk-op">.</span><span class="tk-ident">upper</span><span class="tk-op">,</span> <span class="tk-str">&quot;SELECT&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">tokens</span><span class="tk-op">[</span><span class="tk-num">2</span><span class="tk-op">]</span><span class="tk-op">.</span><span class="tk-ident">upper</span><span class="tk-op">,</span> <span class="tk-str">&quot;FROM&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;numbers: integer, decimal, exponent&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">tokens</span> <span class="tk-op">=</span> <span class="tk-fn">tokenize</span><span class="tk-op">(</span><span class="tk-str">&quot;1 3.14 .5 2.5e3 1E-2&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">tokens</span><span class="tk-op">.</span><span class="tk-fn">slice</span><span class="tk-op">(</span><span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-op">-</span><span class="tk-num">1</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">t</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">t</span><span class="tk-op">.</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;1&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;3.14&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;.5&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;2.5e3&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;1E-2&quot;</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">ok</span><span class="tk-op">(</span><span class="tk-ident">tokens</span><span class="tk-op">.</span><span class="tk-fn">slice</span><span class="tk-op">(</span><span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-op">-</span><span class="tk-num">1</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">every</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">t</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">t</span><span class="tk-op">.</span><span class="tk-ident">type</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;number&quot;</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;strings support single-quote escapes&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">tokens</span> <span class="tk-op">=</span> <span class="tk-fn">tokenize</span><span class="tk-op">(</span><span class="tk-str">&quot;'it''s ok'&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">tokens</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">.</span><span class="tk-ident">type</span><span class="tk-op">,</span> <span class="tk-str">&quot;string&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">tokens</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">.</span><span class="tk-ident">value</span><span class="tk-op">,</span> <span class="tk-str">&quot;it's ok&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">tokens</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">.</span><span class="tk-ident">text</span><span class="tk-op">,</span> <span class="tk-str">&quot;'it''s ok'&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;double quotes and backticks can wrap whitespace and keywords&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">tokens</span> <span class="tk-op">=</span> <span class="tk-fn">tokenize</span><span class="tk-op">(</span><span class="tk-str">'&quot;my column&quot; `from`'</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">tokens</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">.</span><span class="tk-ident">value</span><span class="tk-op">,</span> <span class="tk-str">&quot;my column&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">tokens</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">.</span><span class="tk-ident">quoted</span><span class="tk-op">,</span> <span class="tk-kw">true</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">tokens</span><span class="tk-op">[</span><span class="tk-num">1</span><span class="tk-op">]</span><span class="tk-op">.</span><span class="tk-ident">value</span><span class="tk-op">,</span> <span class="tk-str">&quot;from&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">tokens</span><span class="tk-op">[</span><span class="tk-num">1</span><span class="tk-op">]</span><span class="tk-op">.</span><span class="tk-ident">quoted</span><span class="tk-op">,</span> <span class="tk-kw">true</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;line and block comments are ignored&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-fn">values</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT 1 -- this is a comment\nFROM t&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;SELECT&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;1&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;FROM&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;t&quot;</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-fn">values</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT /* multi-line\ncomment */ 2&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;SELECT&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;2&quot;</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;operators are matched longest first&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-fn">values</span><span class="tk-op">(</span><span class="tk-str">&quot;a &gt;= b &lt;&gt; c != d || e&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;a&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;&gt;=&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;b&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;&lt;&gt;&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;c&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;!=&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;d&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;||&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;e&quot;</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;punctuation&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-fn">values</span><span class="tk-op">(</span><span class="tk-str">&quot;f(a, b);&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;f&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;(&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;a&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;,&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;b&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;)&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;;&quot;</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;token positions are correct (line, column, offset)&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">tokens</span> <span class="tk-op">=</span> <span class="tk-fn">tokenize</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT 1\n  FROM t&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-kw">from</span> <span class="tk-op">=</span> <span class="tk-ident">tokens</span><span class="tk-op">[</span><span class="tk-num">2</span><span class="tk-op">]</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-kw">from</span><span class="tk-op">.</span><span class="tk-ident">value</span><span class="tk-op">,</span> <span class="tk-str">&quot;FROM&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-kw">from</span><span class="tk-op">.</span><span class="tk-ident">line</span><span class="tk-op">,</span> <span class="tk-num">2</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-kw">from</span><span class="tk-op">.</span><span class="tk-ident">column</span><span class="tk-op">,</span> <span class="tk-num">3</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-kw">from</span><span class="tk-op">.</span><span class="tk-ident">start</span><span class="tk-op">,</span> <span class="tk-num">11</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;an unterminated string throws SqlError with a position&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">throws</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-fn">tokenize</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT 'abc&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-ident">err</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+    <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">ok</span><span class="tk-op">(</span><span class="tk-ident">err</span> <span class="tk-kw">instanceof</span> <span class="tk-ident">SqlError</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">err</span><span class="tk-op">.</span><span class="tk-ident">code</span><span class="tk-op">,</span> <span class="tk-str">&quot;SYNTAX_ERROR&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">err</span><span class="tk-op">.</span><span class="tk-ident">position</span><span class="tk-op">.</span><span class="tk-ident">line</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">err</span><span class="tk-op">.</span><span class="tk-ident">position</span><span class="tk-op">.</span><span class="tk-ident">column</span><span class="tk-op">,</span> <span class="tk-num">8</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-kw">true</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;an unterminated block comment throws SqlError&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">throws</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-fn">tokenize</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT /* abc&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">/</span><span class="tk-ident">unterminated</span> <span class="tk-ident">block</span> <span class="tk-ident">comment</span><span class="tk-op">/</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;an unrecognized character throws SqlError&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">throws</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-fn">tokenize</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT @x&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">/</span><span class="tk-ident">unrecognized</span> <span class="tk-ident">character</span><span class="tk-op">/</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;describeTokens produces a readable summary&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">describeTokens</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT 1;&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">'word(SELECT) number(1) punct(;) eof'</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span></code></pre></div>
+
+  <div class="checkpoint">
+    <p class="checkpoint__title">Checkpoint — all 14 tests pass</p>
+    <pre class="code"><code>node --test tests/tokenizer.test.js</code></pre>
+    <p class="checkpoint__expect">ℹ tests 14
+ℹ pass 14
+ℹ fail 0</p>
+    <p>Then try <code>.tokens SELECT 1 + 2;</code> in the REPL.</p>
+  </div>
+
+  <h2 id="recap">Chapter recap</h2>
+  <ul>
+    <li>Lexing cuts the character stream into tokens and records their offset / line / column.</li>
+    <li>Comments and whitespace produce no tokens; strings are decoded; keywords keep both the raw and the uppercase form.</li>
+    <li>Errors carry a position, so users know where to fix things.</li>
+  </ul>
+
+  <div class="exercise">
+    <p class="exercise__title">Exercises</p>
+    <ol>
+      <li>Support hexadecimal numbers (<code>0xFF</code>): add a check in the number branch and write a test.</li>
+      <li>Support <code>#</code> single-line comments (MySQL style). Think about where to check so it doesn't collide with operators.</li>
+      <li>If a string contains a newline, does the line counter update correctly? Write a test to verify.</li>
+    </ol>
+  </div>
+
+  <h2 id="vocab">Chapter glossary</h2>
+  <dl class="vocab">
+    <dt>Lexer / Tokenizer</dt><dd>Turns the character stream into tokens.</dd>
+    <dt>Token</dt><dd>The smallest syntactic unit, with a type and a position.</dd>
+    <dt>Escape</dt><dd>A special notation for a special character, for example <code>''</code> inside a SQL string means one single quote.</dd>
+  </dl>
+</article>
+
+
+      <footer class="chapter-foot site-chapter-foot">
+        <div class="chapter-foot__inner">
+          <p class="chapter-foot__label">Finished this chapter? Mark it complete and the progress stays in this browser.</p>
+          <button id="mark-complete" class="btn btn--complete" type="button"
+                  data-chapter="" aria-pressed="false">Mark chapter complete</button>
+        </div>
+        <nav class="pager" aria-label="Previous and next chapter">
+          <a class="pager-link pager-link--prev" href="../chapters/ch01.html"><span class="pager-link__meta">Previous chapter</span><span class="pager-link__title">Chapter 1 · Orientation and skeleton</span></a>
+          <a class="pager-link pager-link--next" href="../chapters/ch03.html"><span class="pager-link__meta">Next chapter</span><span class="pager-link__title">Chapter 3 · Parsing</span></a>
+        </nav>
+      </footer>
+    </div>
+    <aside id="page-toc" class="page-toc" aria-label="On this page"></aside>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <p><strong>Build a SQL Database Engine from Scratch</strong> — ten chapters that start with a single character and end with a database that persists, queries, and transacts.</p>
+        <p class="footer-mono">Zero dependencies · Node.js only · built by hand</p>
+      </div>
+      <div>
+        <p class="footer-mono"><a href="../playground.html">SQL Playground</a> · <a href="../reference.html">Syntax Reference</a> · <a href="../index.html">Home</a></p>
+        <p class="footer-mono">Switch between light and dark themes in the top-right corner.</p>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="search-overlay" role="dialog" aria-modal="true" aria-label="Search chapters" aria-hidden="true">
+    <div class="search-panel">
+      <div class="search-panel__head">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <input id="search-input" type="search" placeholder="Search chapter titles or summaries…"
+               autocomplete="off" spellcheck="false" aria-label="Search chapters">
+        <span class="search-panel__esc">Esc</span>
+      </div>
+      <ul class="search-results" id="search-results"></ul>
+      <div class="search-panel__foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> select</span>
+        <span><kbd>Enter</kbd> open</span>
+        <span><kbd>/</kbd> open search</span>
+        <span><kbd>[</kbd><kbd>]</kbd> previous / next chapter</span>
+      </div>
+    </div>
+  </div>
+
+  <noscript>
+    <p style="max-width:74ch;margin:1rem auto;padding:0 1rem;font-family:monospace;color:#6e675c">
+      The main content of this site is readable without JavaScript; search, theme switching, and progress tracking need it enabled.
+    </p>
+  </noscript>
+</body>
+</html>

@@ -1,0 +1,201 @@
+<aside class="chapter-meta">
+  <h2 class="chapter-meta__title">Chapter info</h2>
+  <ul class="chapter-meta__list">
+    <li><strong>Estimated time</strong> 25 minutes</li>
+    <li><strong>Difficulty</strong> Beginner — just a little JavaScript</li>
+    <li><strong>What you'll learn</strong> The six parts of a database engine, the project layout, and the interactive REPL loop</li>
+    <li><strong>What you'll build</strong> <code>bin/sql.js</code>, <code>package.json</code></li>
+  </ul>
+</aside>
+
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Chapter 01 / Tour and skeleton</p>
+    <h1>Start with a map: what is a database made of?</h1>
+    <p class="chapter-lead">
+      You probably use <code>SELECT</code> every day, but rarely stop to think about what happens behind those six letters.
+      This tutorial starts from an empty folder and writes, in plain JavaScript, a SQL database that can persist, query,
+      and run transactions. Chapter 1 draws the map first, then sets up the project skeleton.
+    </p>
+  </header>
+
+  <h2 id="why">Why write your own database?</h2>
+  <p>
+    Because a database is one of the few pieces of software you rely on every day but rarely take apart. Once you know
+    how a row becomes a 4096-byte page, how a table is scanned, and how a transaction is recovered after a power loss,
+    vague intuitions suddenly become concrete: why adding an index makes a query faster, why <code>NULL</code> can't be
+    compared with <code>=</code>, and why even a small query can be slow.
+  </p>
+  <p>
+    And it's not as hard as it looks. An educational database engine has only three core jobs:
+  </p>
+  <ul>
+    <li><strong>Read SQL</strong>: split text into tokens, then build a syntax tree (AST).</li>
+    <li><strong>Compute results</strong>: scan, filter, group, sort, join.</li>
+    <li><strong>Store results</strong>: page format, transaction journal, crash recovery.</li>
+  </ul>
+  <p>
+    This project builds those three parts in order. By the end you'll have a zero-dependency database you can open
+    with <code>node bin/sql.js</code>, plus an engine you can play with in the browser.
+  </p>
+
+  <h2 id="architecture">Architecture: the journey of one SQL statement</h2>
+  <p>Start with a picture. When you type this SQL:</p>
+  <pre class="code"><code>SELECT title FROM books WHERE price &gt; 100 ORDER BY title;</code></pre>
+  <p>Inside our engine it passes through these stages:</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Stage</th><th>Module</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td>Tokenizing</td><td><code>tokenizer.js</code></td><td>Splits the string into tokens such as <code>word(SELECT)</code>, <code>word(books)</code>…, and records their positions.</td></tr>
+        <tr><td>Parsing</td><td><code>parser.js</code></td><td>Builds an AST from the tokens with recursive descent and reports syntax errors.</td></tr>
+        <tr><td>Evaluation</td><td><code>engine/expr.js</code></td><td>Turns WHERE conditions and column expressions into values.</td></tr>
+        <tr><td>Query execution</td><td><code>engine/query.js</code></td><td>Scans, filters, groups, projects, sorts, and limits rows.</td></tr>
+        <tr><td>Storage</td><td><code>table.js</code>, <code>storage/*</code></td><td>Rows live in memory or in pages; committed data is written to disk.</td></tr>
+        <tr><td>Interface</td><td><code>bin/sql.js</code></td><td>REPL: read a line, execute it, print the result as a table.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Each chapter covers one module (or a few). You'll find that the interfaces are small:
+    the tokenizer returns only an array of tokens, the parser returns only plain objects, and the executor returns only
+    a result object. Small interfaces are easier to test and easier to replace.
+  </p>
+
+  <div class="callout callout--tip">
+    <p class="callout__title">How to read this tutorial</p>
+    <p>
+      Every chapter has a checkpoint: do the work, run the command, and if you see the same output, move on.
+      Code blocks are the <b>complete file at the end of the chapter</b> (not fragments), so you can paste them straight
+      into your project. Differences between chapters are marked with diff blocks.
+    </p>
+  </div>
+
+  <h2 id="layout">Project layout: everything in its place</h2>
+  <pre class="code"><code>SQL/
+├── bin/sql.js              # command-line REPL
+├── src/
+│   ├── tokenizer.js        # lexical analysis
+│   ├── parser.js           # parsing → AST
+│   ├── errors.js           # unified error types
+│   ├── values.js           # values, types, comparison, NULL
+│   ├── schema.js           # structure produced by CREATE TABLE
+│   ├── table.js            # rows and constraints of one table
+│   ├── database.js         # public facade: open / exec / close
+│   ├── engine/
+│   │   ├── expr.js         # expression evaluation
+│   │   ├── query.js        # SELECT pipeline
+│   │   ├── aggregate.js    # COUNT / SUM / GROUP BY
+│   │   ├── write.js        # INSERT / UPDATE / DELETE / DDL
+│   │   └── executor.js     # dispatch by statement type
+│   ├── storage/
+│   │   ├── memory.js       # in-memory backend
+│   │   ├── page.js         # page format
+│   │   ├── journal.js      # transaction journal
+│   │   └── disk.js         # file backend
+│   └── node.js             # Node.js entry point (openDatabase)
+├── tests/                  # unit and integration tests for node --test
+├── steps/                  # complete project snapshot at the end of each chapter
+└── docs/                   # the tutorial site you're reading
+  </code></pre>
+  <p>
+    The <code>steps/</code> folder is your time machine: <code>steps/02-tokenizer</code> is the project as it exists
+    at the end of chapter 2. If you get stuck, compare against it, or copy it out and run it.
+  </p>
+
+  <h2 id="prerequisites">Before you start: what you need</h2>
+  <ul>
+    <li><strong>Node.js 18 or newer</strong> — the project has zero dependencies, so no <code>npm install</code>.</li>
+    <li>A terminal that can run commands (PowerShell on Windows and Terminal on macOS both work).</li>
+    <li>Basic JavaScript: objects, arrays, <code>Map</code>, <code>class</code>, <code>async</code>.</li>
+  </ul>
+  <p>Check the version:</p>
+  <pre class="code"><code>node --version
+# v18.x or newer</code></pre>
+
+  <h2 id="skeleton">Build the skeleton: start with a REPL that only says hello</h2>
+  <p>
+    The first file is <code>package.json</code>. It's ordinary, but note <code>"type": "module"</code>:
+    everything uses ES modules, so the same code can later be bundled into the browser unchanged.
+  </p>
+  <pre class="code"><code>{
+  "name": "sql-from-scratch",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "repl": "node bin/sql.js",
+    "test": "node --test"
+  },
+  "engines": { "node": "&gt;=18" }
+}</code></pre>
+  <p>
+    Next is <code>bin/sql.js</code>: a loop that reads input and answers built-in commands.
+    It doesn't execute SQL yet — that's chapter 6 — but it wires up the path from user input to response.
+  </p>
+
+  <!-- include bin/sql.js step=01 title="bin/sql.js" -->
+
+  <p>Three things are worth noting:</p>
+  <ol>
+    <li>
+      <strong><code>readline/promises</code></strong>: Node.js's built-in interactive input module.
+      <code>await rl.question("sql&gt; ")</code> waits until the user presses Enter before returning a line.
+    </li>
+    <li>
+      <strong><code>try { ... } catch { }</code></strong> wraps <code>rl.question</code>:
+      when the user presses Ctrl+D (or piped input ends), the promise is rejected; that's the normal way to exit.
+    </li>
+    <li>
+      <strong>Dot commands</strong> (<code>.help</code>, <code>.exit</code>) are commands of the CLI itself,
+      not SQL. Later chapters add <code>.tables</code>, <code>.schema</code>, and others.
+    </li>
+  </ol>
+
+  <div class="checkpoint">
+    <p class="checkpoint__title">Checkpoint — the REPL is alive</p>
+    <pre class="code"><code>node bin/sql.js</code></pre>
+    <p class="checkpoint__expect">sql-from-scratch v1.0.0 — a SQL database built from scratch in JavaScript
+Type .help for commands, .exit to quit.
+sql&gt;</p>
+    <p>Type <code>.help</code> to see the available commands; type <code>SELECT 1;</code> and you'll see "not implemented". That's expected.</p>
+  </div>
+
+  <h2 id="mental-model">Build the right mental model: compiler + interpreter</h2>
+  <p>
+    Many tutorials make databases sound mysterious. Structurally, though, a database is a combination of two classic
+    kinds of program:
+  </p>
+  <ul>
+    <li><strong>The front half works like a compiler</strong>: string → tokens → syntax tree. This part runs once and is independent of the data.</li>
+    <li><strong>The back half works like an interpreter</strong>: walk the syntax tree, scan data, compute results. This part runs once per row.</li>
+  </ul>
+  <p>
+    The split matters: the syntax tree for <code>SELECT title FROM books</code> is the same whether books has three
+    rows or three million. So we can parse and validate the SQL first, then enter execution. Later, if you want more
+    speed, you change the back half (add indexes, change the execution plan).
+  </p>
+
+  <h2 id="recap">Chapter recap</h2>
+  <ul>
+    <li>A database engine consists of a tokenizer, parser, expression evaluator, query executor, storage layer, and CLI.</li>
+    <li>The project uses ES modules and has zero dependencies; <code>steps/</code> keeps a complete snapshot of each chapter.</li>
+    <li>We start with a talking REPL skeleton, ready for the engine to plug in later.</li>
+  </ul>
+
+  <div class="exercise">
+    <p class="exercise__title">Exercises</p>
+    <ol>
+      <li>Add a <code>.version</code> command to the REPL that prints the <code>VERSION</code> constant.</li>
+      <li>Make the REPL print nothing when it receives an empty line (the current code already skips empty lines — verify it).</li>
+      <li>Think about it: if you replaced <code>readline</code> with a loop that reads a file, would the REPL still work?</li>
+    </ol>
+  </div>
+
+  <h2 id="vocab">Chapter glossary</h2>
+  <dl class="vocab">
+    <dt>REPL</dt><dd>Read-Eval-Print Loop: read a line, evaluate, print, repeat. Almost every database CLI works this way.</dd>
+    <dt>Token</dt><dd>The smallest unit of lexical analysis: keywords, identifiers, numbers, strings, operators.</dd>
+    <dt>AST</dt><dd>Abstract Syntax Tree: the structure of a statement represented as objects, ignoring parentheses and whitespace.</dd>
+  </dl>
+</article>

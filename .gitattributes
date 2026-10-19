@@ -1,0 +1,7 @@
+# Normalize line endings so Windows and CI checkouts agree
+* text=auto eol=lf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.gif binary

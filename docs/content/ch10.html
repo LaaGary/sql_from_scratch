@@ -1,0 +1,209 @@
+<aside class="chapter-meta">
+  <h2 class="chapter-meta__title">Chapter info</h2>
+  <ul class="chapter-meta__list">
+    <li><strong>Estimated time</strong> 80 minutes (the longest chapter)</li>
+    <li><strong>Difficulty</strong> ★★★★★ Requires some patience, but it pays off</li>
+    <li><strong>What you'll learn</strong> Page format, slotted pages, catalog, CRC32 journal, crash recovery, transactions</li>
+    <li><strong>What you'll build</strong> <code>storage/page.js</code>, <code>storage/journal.js</code>, <code>storage/disk.js</code>, <code>src/node.js</code>, changes to <code>database.js</code></li>
+  </ul>
+</aside>
+
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Chapter 10 / Persistence and transactions</p>
+    <h1>Data survives a restart: pages, journals, and transactions</h1>
+    <p class="chapter-lead">
+      The database we've built has a fatal flaw: quit the program and the data is gone. This chapter writes
+      the whole database to a file, and does it so that "losing power mid-write won't break it". This is
+      the chapter where the project most resembles a real database.
+    </p>
+  </header>
+
+  <h2 id="why-pages">Why not just JSON.stringify?</h2>
+  <p>
+    The simplest persistence is obviously: on every save, turn the whole database into JSON and write it
+    to a file. That works at small data sizes, but it runs into three problems:
+  </p>
+  <ul>
+    <li><strong>You can't change just a part</strong>: updating one row still rewrites the entire file.</li>
+    <li><strong>A crash mid-write destroys it</strong>: the file may be only half written.</li>
+    <li><strong>It doesn't scale</strong>: adding caching, building indexes, or supporting large files later will all be cramped.</li>
+  </ul>
+  <p>
+    Real databases solve this with fixed-size <strong>pages</strong>. Our format is simple: 4096 bytes per
+    page, page 0 is the file header, followed by the catalog (table schemas) and the heap (data rows).
+  </p>
+
+  <h2 id="layout">What the file looks like</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Page number</th><th>Contents</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td>header</td><td>magic <code>SQLDB01</code>, version, pageCount, catalog location</td></tr>
+        <tr><td>1…k</td><td>catalog</td><td>the schema of every table and its heap root page number, as a chain of pages linked by next</td></tr>
+        <tr><td>k+1…</td><td>heap</td><td>each table's rows, stored in slotted pages and chained by next in the same way</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    The heap page layout is the classic design from database textbooks: <strong>the slot array grows from
+    the front, cells grow from the back</strong>, and free space sits in between. Each slot records the
+    cell's offset and length, so deleting or moving a row only touches the slot rather than the whole page.
+  </p>
+  <pre class="code"><code>+0   type = 3        (1 byte)
++4   next page       (u32)
++8   slot count      (u16)
++10  free offset     (u16)   // how much has been used from the end of the page
++12  slot[0]  offset(u16) + length(u16)
++16  slot[1]  ...
+     ...
+     free space
+end of page  cell[0] JSON bytes
+     cell[1]  ...
+  </code></pre>
+
+  <!-- include src/storage/page.js step=10 title="src/storage/page.js" -->
+
+  <h2 id="pager">Pager: responsible only for "page n"</h2>
+  <p>
+    <code>Pager</code> has a single responsibility: open the file, read page n, write page n, allocate a
+    new page number. It keeps a page cache and a <code>dirty</code> list recording which pages this
+    transaction changed. Separating "pages" from "data structures" is the key to maintainable database
+    code.
+  </p>
+
+  <h2 id="diskstore">DiskStore: turning a snapshot into pages</h2>
+  <p>
+    <code>DiskStore</code> implements the same interface as <code>MemoryStore</code>:
+    <code>load()</code>, <code>save()</code>, <code>close()</code>. It is responsible for:
+  </p>
+  <ol>
+    <li>Serializing every row of every table to JSON and packing it into the heap page chain.</li>
+    <li>Writing every schema and each table's root page number into the catalog page chain.</li>
+    <li>Writing the header page, recording pageCount and the catalog location.</li>
+    <li>Calling <code>commit()</code>: write the journal first, then the body, then delete the journal.</li>
+  </ol>
+  <p>
+    Free pages aren't written to the file; they're <strong>computed on open</strong>: take every page in
+    the file, subtract the header, catalog, and heap, and the rest are free. Maintaining one less free
+    list means one less thing that can be corrupted.
+  </p>
+
+  <!-- include src/storage/disk.js step=10 title="src/storage/disk.js" -->
+
+  <h2 id="journal">The transaction journal: a crash won't corrupt anything</h2>
+  <p>
+    The order inside <code>commit()</code> is: write the pages this transaction changes to
+    <code>xxx.journal</code> and <code>fsync</code>; write the COMMIT end marker; then modify the real
+    database file; finally delete the journal.
+  </p>
+  <p>If the machine dies during commit:</p>
+  <ul>
+    <li>the journal has no COMMIT marker → the transaction is treated as if it never happened; drop the journal and the database keeps its old state.</li>
+    <li>the journal has a COMMIT marker → replay (roll forward) every page and the data returns to a consistent state.</li>
+  </ul>
+  <p>
+    Every page carries a CRC32 checksum. This isn't only for catching corruption; it's also how we decide
+    whether a record was written completely.
+  </p>
+
+  <!-- include src/storage/journal.js step=10 title="src/storage/journal.js" -->
+
+  <h2 id="transactions">Transactions: BEGIN / COMMIT / ROLLBACK</h2>
+  <p>
+    With <code>save()</code> in place, transactions are simple: <code>BEGIN</code> takes a snapshot,
+    <code>ROLLBACK</code> restores it, and only <code>COMMIT</code> actually writes to the file. Every
+    statement during a transaction changes memory only, so other statements see the changes while the file
+    hasn't changed yet.
+  </p>
+  <p>
+    This is an "optimistic" implementation: no locks, no concurrency control. That's completely sufficient
+    for a single program, but multiple processes opening the same file at once would need more machinery
+    (file locks, MVCC, WAL LSNs). That's a direction well worth exploring further.
+  </p>
+
+  <!-- diff src/database.js from=09 to=10 title="src/database.js: add transactions and autocommit" -->
+
+  <h2 id="node">The Node.js entry point: openDatabase()</h2>
+  <p>
+    Finally, wire <code>DiskStore</code> into the public API. <code>src/index.js</code> deliberately stays
+    pure core; anything file-system related lives in <code>src/node.js</code>. That's what lets the
+    tutorial site's playground bundle the core version straight into the browser.
+  </p>
+
+  <!-- include src/node.js step=10 title="src/node.js" -->
+
+  <p>The CLI can now open files directly:</p>
+  <pre class="code"><code>node bin/sql.js demo.db</code></pre>
+  <p>
+    Once in the REPL, every statement auto-commits, and it saves once more on exit. You can also switch
+    databases with <code>.open other.db</code>.
+  </p>
+
+  <h2 id="crash-test">Verification: simulating a power loss</h2>
+  <p>The test does this:</p>
+  <ol>
+    <li>Create a database, write data, and close it.</li>
+    <li>Write a journal by hand, then truncate it, simulating "the journal was only half written".</li>
+    <li>Reopen the database and confirm the journal was discarded and the database is unchanged.</li>
+    <li>Write a complete journal, reopen, and confirm the pages are replayed.</li>
+  </ol>
+
+  <!-- include tests/disk.test.js step=10 title="tests/disk.test.js" -->
+
+  <div class="checkpoint">
+    <p class="checkpoint__title">Checkpoint — the data really survived</p>
+    <pre class="code"><code>node --test tests/disk.test.js tests/transaction.test.js</code></pre>
+    <p class="checkpoint__expect">ℹ tests 16
+ℹ pass 16
+ℹ fail 0</p>
+    <p>Then run the two-part CLI test again:</p>
+    <pre class="code"><code>node bin/sql.js demo.db &lt; part1.sql   # create tables and data
+node bin/sql.js demo.db &lt; part2.sql   # reopen and query the data</code></pre>
+  </div>
+
+  <h2 id="limits">Limitations of the teaching version, and what's next</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Limitation</th><th>Reason</th><th>Possible fix</th></tr></thead>
+      <tbody>
+        <tr><td>every commit rewrites all tables</td><td>simple, hard to get wrong</td><td>write only dirty pages, add checkpoints</td></tr>
+        <tr><td>the whole database lives in memory</td><td>simpler query logic</td><td>page cache + load pages on demand</td></tr>
+        <tr><td>no indexes</td><td>chapter scope</td><td>B-tree or hash index, starting with primary key lookups</td></tr>
+        <tr><td>no concurrency control</td><td>single process</td><td>file locks, MVCC, WAL LSNs</td></tr>
+        <tr><td>no query planner</td><td>the pipeline has a fixed order</td><td>EXPLAIN, cost estimates, choosing the driving table</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Congratulations on making it this far. You now have <strong>a SQL database that really saves,
+    queries, and runs transactions</strong>, and you wrote every byte yourself. The best way to keep
+    learning is: pick one limitation above and change it.
+  </p>
+
+  <h2 id="recap">Chapter recap</h2>
+  <ul>
+    <li>A database file is made of 4096-byte pages: header, catalog, heap.</li>
+    <li>A slotted page lets rows grow from the end of the page while slots grow from the front.</li>
+    <li>The journal is written before commit and replayed after a crash; without a COMMIT marker it's discarded.</li>
+    <li>Transactions are implemented with snapshots: BEGIN snapshots, ROLLBACK restores, COMMIT writes the file.</li>
+  </ul>
+
+  <div class="exercise">
+    <p class="exercise__title">Exercises</p>
+    <ol>
+      <li>Implement <code>VACUUM</code>: rewrite every table into contiguous pages to shrink the file.</li>
+      <li>Build a B+tree index for the PRIMARY KEY so <code>WHERE id = ?</code> doesn't scan the whole table.</li>
+      <li>Add a <code>.backup &lt;file&gt;</code> command that copies a consistent backup using the existing page format.</li>
+    </ol>
+  </div>
+
+  <h2 id="vocab">Chapter glossary</h2>
+  <dl class="vocab">
+    <dt>Pager</dt><dd>The module that reads and writes fixed-size pages.</dd>
+    <dt>Slotted page</dt><dd>A page layout where a slot array points at the actual data, making deletes and moves cheap.</dd>
+    <dt>Journal / WAL</dt><dd>Write changes to a log first, then apply them to the main file; used for crash recovery.</dd>
+    <dt>Roll forward</dt><dd>Replay committed changes from the log so the data returns to a consistent state.</dd>
+    <dt>Autocommit</dt><dd>Every statement automatically becomes a transaction.</dd>
+  </dl>
+</article>

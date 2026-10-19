@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chapter 4 · Values and types — Building an SQL database engine from scratch</title>
+  <meta name="description" content="Integers, reals, text, and NULL; three-valued logic, type affinity, and LIKE.">
+  <meta property="og:title" content="Chapter 4 · Values and types — Building an SQL database engine from scratch">
+  <meta property="og:description" content="Integers, reals, text, and NULL; three-valued logic, type affinity, and LIKE.">
+  <meta property="og:type" content="article">
+  <meta property="og:locale" content="en_US">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("sql-theme");
+        document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script defer src="../assets/toc.js"></script>
+  <script defer src="../assets/site.js"></script>
+</head>
+<body class="page page--chapter" data-page-kind="chapter"
+      data-prev-url="../chapters/ch03.html" data-next-url="../chapters/ch05.html">
+
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <div id="reading-progress" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="site-header__left">
+      <button id="sidebar-toggle" class="icon-btn" type="button"
+              aria-label="Open chapter navigation" aria-controls="sidebar" aria-expanded="false">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <path d="M2 4h12M2 8h12M2 12h12" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <a class="brand" href="../index.html">
+        <span class="brand__mark" aria-hidden="true">SQL</span>
+        <span class="brand__name">SQL from Scratch</span>
+      </a>
+      <span class="header-chapter">Chapter 4 · Values and types</span>
+    </div>
+    <div class="site-header__right">
+      <span class="header-progress" data-progress-label>0/10 complete</span>
+      <button id="search-toggle" class="icon-btn icon-btn--search" type="button"
+              aria-label="Search chapters" aria-haspopup="dialog">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <span class="icon-btn__label">Search</span>
+        <span class="kbd-hint">/</span>
+      </button>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
+        <svg class="theme-icon theme-icon--sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="8" cy="8" r="3"/>
+          <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" stroke-linecap="round"/>
+        </svg>
+        <svg class="theme-icon theme-icon--moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M13.4 9.6A5.8 5.8 0 0 1 6.4 2.6a5.8 5.8 0 1 0 7 7Z" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <aside class="sidebar" id="sidebar" aria-label="Chapter navigation">
+    <div class="sidebar__scroll">
+      <p class="sidebar__heading">Chapter Index</p>
+      <ol class="toc-list"><li class="toc-item"><a class="toc-link" href="../chapters/ch01.html"><span class="toc-num">01</span><span class="toc-title">Orientation and skeleton</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch02.html"><span class="toc-num">02</span><span class="toc-title">Lexing</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch03.html"><span class="toc-num">03</span><span class="toc-title">Parsing</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch04.html"><span class="toc-num">04</span><span class="toc-title">Values and types</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch05.html"><span class="toc-num">05</span><span class="toc-title">Storage layer</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch06.html"><span class="toc-num">06</span><span class="toc-title">SELECT pipeline</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch07.html"><span class="toc-num">07</span><span class="toc-title">Aggregates and grouping</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch08.html"><span class="toc-num">08</span><span class="toc-title">Update and delete</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch09.html"><span class="toc-num">09</span><span class="toc-title">JOIN</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch10.html"><span class="toc-num">10</span><span class="toc-title">Persistence and transactions</span></a></li></ol>
+      <p class="sidebar__heading">Tools</p>
+      <nav class="nav-list" aria-label="Tools">
+        <a class="toc-link" href="../playground.html"><span class="toc-num">▸</span><span class="toc-title">SQL Playground</span></a>
+        <a class="toc-link" href="../reference.html"><span class="toc-num">▸</span><span class="toc-title">Syntax Reference</span></a>
+        <a class="toc-link" href="../index.html"><span class="toc-num">▸</span><span class="toc-title">Home &amp; Roadmap</span></a>
+      </nav>
+    </div>
+    <div class="sidebar__foot">
+      <a href="../index.html"><span>Home</span><span>⌂</span></a>
+      <a href="../playground.html"><span>Playground</span><span>⟩</span></a>
+      <a href="../reference.html"><span>Reference</span><span>⌗</span></a>
+      <p class="sidebar__version">SQL engine tutorial · 0.1<br>Zero dependencies · works offline</p>
+    </div>
+  </aside>
+  <div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
+
+  <main id="main" class="layout">
+    <div class="content-column">
+      <aside class="chapter-meta">
+  <h2 class="chapter-meta__title">Chapter info</h2>
+  <ul class="chapter-meta__list">
+    <li><strong>Estimated time</strong> 40 minutes</li>
+    <li><strong>Difficulty</strong> ★★☆☆☆ The concepts are harder than the code</li>
+    <li><strong>What you'll learn</strong> Three-valued logic, type affinity, NULL comparison rules, LIKE</li>
+    <li><strong>What you'll build</strong> <code>src/values.js</code>, <code>tests/values.test.js</code></li>
+  </ul>
+</aside>
+
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Chapter 04 / Values and types</p>
+    <h1>NULL is not 0: values, types, and comparison</h1>
+    <p class="chapter-lead">
+      If you've ever been burned by <code>WHERE status &lt;&gt; 'done'</code> dropping rows where status is
+      <code>NULL</code>, this chapter explains why. A database's value system has a few more rules than
+      JavaScript's, and those rules are the foundation of every query semantic that follows.
+    </p>
+  </header>
+
+  <h2 id="types">Four runtime types</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Type</th><th>JavaScript representation</th><th>Example</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><code>null</code></td><td><code>null</code></td><td><code>NULL</code></td><td>Not 0 and not an empty string — it means "unknown"</td></tr>
+        <tr><td><code>integer</code></td><td><code>number</code> (integer)</td><td><code>42</code></td><td><code>Number.isInteger</code> is true</td></tr>
+        <tr><td><code>real</code></td><td><code>number</code> (fractional)</td><td><code>3.14</code></td><td>Floating point</td></tr>
+        <tr><td><code>text</code></td><td><code>string</code></td><td><code>'hello'</code></td><td>UTF-8 string</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    In our engine, <code>TRUE</code> / <code>FALSE</code> are just <code>1</code> / <code>0</code>
+    (same as SQLite). That saves a type and lets boolean operations use numeric comparison directly.
+  </p>
+
+  <h2 id="null">NULL and three-valued logic</h2>
+  <p>
+    SQL comparisons aren't just true / false; they are <strong>true / false / UNKNOWN</strong>.
+    Any comparison with NULL on either side yields UNKNOWN:
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Expression</th><th>Result</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td><code>NULL = 1</code></td><td>UNKNOWN</td><td>Is "unknown" equal to 1? No idea</td></tr>
+        <tr><td><code>NULL = NULL</code></td><td>UNKNOWN</td><td>Two unknowns aren't necessarily the same unknown</td></tr>
+        <tr><td><code>NULL IS NULL</code></td><td>TRUE</td><td><code>IS NULL</code> is a dedicated test, not a comparison</td></tr>
+        <tr><td><code>NULL AND FALSE</code></td><td>FALSE</td><td>Whatever the unknown is, AND FALSE is always false</td></tr>
+        <tr><td><code>NULL OR TRUE</code></td><td>TRUE</td><td>Same reasoning</td></tr>
+        <tr><td><code>NOT NULL</code></td><td>UNKNOWN</td><td>The opposite of unknown is still unknown</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    <code>WHERE</code> keeps only rows whose result is <strong>TRUE</strong>. So
+    <code>WHERE price &lt;&gt; 100</code> does not select rows where <code>price IS NULL</code>.
+    They are excluded not because they "aren't equal to 100", but because the comparison result is UNKNOWN.
+    This is the most common NULL trap in practice.
+  </p>
+  <div class="callout callout--warn">
+    <p class="callout__title">Practical warning</p>
+    <p>
+      If you mean "not 100, or unknown", you must say so explicitly:
+      <code>WHERE price &lt;&gt; 100 OR price IS NULL</code>. The database won't guess for you.
+    </p>
+  </div>
+
+  <h2 id="affinity">Type affinity: '42' stored in an INTEGER column becomes 42</h2>
+  <p>
+    SQL is dynamically typed: a column's declared type isn't a hard restriction, it's a preference.
+    Our <code>applyAffinity()</code> tries to convert values during INSERT:
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Column type</th><th>Insert <code>'42'</code></th><th>Insert <code>42</code></th><th>Insert <code>'abc'</code></th></tr></thead>
+      <tbody>
+        <tr><td>INTEGER</td><td><code>42</code></td><td><code>42</code></td><td><code>'abc'</code> (stored as-is if it can't convert)</td></tr>
+        <tr><td>REAL</td><td><code>42</code></td><td><code>42</code></td><td><code>'abc'</code></td></tr>
+        <tr><td>TEXT</td><td><code>'42'</code></td><td><code>'42'</code></td><td><code>'abc'</code></td></tr>
+        <tr><td>BOOLEAN</td><td><code>1</code></td><td><code>1</code></td><td><code>0</code> or <code>1</code> (based on truthiness)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    This "lenient but predictable" conversion keeps beginners from getting stuck on type errors while preserving
+    the behavior a database should have. If you want strict mode, change "can't convert" in
+    <code>applyAffinity</code> to throw an error.
+  </p>
+
+  <h2 id="compare">Comparison vs. ordering: two different things</h2>
+  <p>
+    SQL's <code>=</code> means "equal values", while <code>ORDER BY</code> needs a total order. The rules aren't
+    quite the same. Our <code>compareValues()</code> defines the total order used for sorting:
+  </p>
+  <pre class="code"><code>NULL  &lt;  number (-∞ … +∞)  &lt;  text (lexicographic)</code></pre>
+  <p>
+    So <code>3 &lt; 'abc'</code> is TRUE (numbers sort before text), but
+    <code>3 = 'abc'</code> is FALSE (different types are not equal). SQLite works the same way.
+    This design gives us stable ordering even in mixed-type columns.
+  </p>
+
+  <h2 id="like">LIKE: SQL's wildcards</h2>
+  <ul>
+    <li><code>%</code>: a string of any length (including zero).</li>
+    <li><code>_</code>: exactly one character.</li>
+    <li><code>\%</code>: escape; a literal <code>%</code>.</li>
+  </ul>
+  <p>
+    We implement it by translating the pattern into a regular expression. Note that SQLite's LIKE is
+    case-insensitive for ASCII letters, so the regex gets the <code>i</code> flag. Before converting, escape the
+    regex special characters, otherwise <code>.</code> becomes "any character".
+  </p>
+
+  <div class="file"><div class="file__head"><span class="file__name">src/values.js</span><span class="file__meta">JavaScript · 306 lines · step 4</span></div><pre class="code"><code><span class="tk-com">/**
+ * Values and types
+ *
+ * SQL values and JavaScript values are not the same thing; the differences are threefold:
+ *
+ *   1. NULL is not &quot;no value&quot; but a value of its own. Any comparison with NULL yields
+ *      UNKNOWN (three-valued logic); only rows whose WHERE result is TRUE are kept.
+ *   2. Numbers are integers (INTEGER) or floats (REAL). In SQL, 1 and 1.0 are equal,
+ *      but they display and store differently.
+ *   3. Types can convert (type affinity): storing '42' into an INTEGER column
+ *      converts it to the number 42.
+ *
+ * This file centralizes those rules so parser / executor / storage share one set of
+ * definitions instead of each implementing comparison separately and drifting apart.
+ */</span>
+
+<span class="tk-com">/** Type affinities a column can declare. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">const</span> <span class="tk-ident">AFFINITY</span> <span class="tk-op">=</span> <span class="tk-op">{</span>
+  <span class="tk-ident">INTEGER</span><span class="tk-op">:</span> <span class="tk-str">&quot;INTEGER&quot;</span><span class="tk-op">,</span>
+  <span class="tk-ident">REAL</span><span class="tk-op">:</span> <span class="tk-str">&quot;REAL&quot;</span><span class="tk-op">,</span>
+  <span class="tk-ident">TEXT</span><span class="tk-op">:</span> <span class="tk-str">&quot;TEXT&quot;</span><span class="tk-op">,</span>
+  <span class="tk-ident">BOOLEAN</span><span class="tk-op">:</span> <span class="tk-str">&quot;BOOLEAN&quot;</span><span class="tk-op">,</span>
+  <span class="tk-ident">BLOB</span><span class="tk-op">:</span> <span class="tk-str">&quot;BLOB&quot;</span><span class="tk-op">,</span>
+<span class="tk-op">}</span><span class="tk-op">;</span>
+
+<span class="tk-com">/**
+ * Map the type name in CREATE TABLE to a type affinity.
+ * Rules follow SQLite's affinity concept, simplified to five kinds.
+ * @param {string} typeName
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">affinityOf</span><span class="tk-op">(</span><span class="tk-ident">typeName</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">name</span> <span class="tk-op">=</span> <span class="tk-type">String</span><span class="tk-op">(</span><span class="tk-ident">typeName</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-str">&quot;&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">toUpperCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">name</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;INTEGER&quot;</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">name</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;INT&quot;</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">name</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;BIGINT&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">INTEGER</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">[</span><span class="tk-str">&quot;REAL&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;DOUBLE&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;FLOAT&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;NUMERIC&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;DECIMAL&quot;</span><span class="tk-op">]</span><span class="tk-op">.</span><span class="tk-fn">includes</span><span class="tk-op">(</span><span class="tk-ident">name</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">REAL</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">name</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;BOOLEAN&quot;</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">name</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;BOOL&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">BOOLEAN</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">name</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;BLOB&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">BLOB</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">TEXT</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/**
+ * Return the runtime type name of a value.
+ * @param {unknown} value
+ * @returns {&quot;null&quot;|&quot;integer&quot;|&quot;real&quot;|&quot;text&quot;}
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">typeOf</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">null</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">undefined</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-str">&quot;null&quot;</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;number&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-type">Number</span><span class="tk-op">.</span><span class="tk-fn">isFinite</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-type">Error</span><span class="tk-op">(</span><span class="tk-str">&quot;unsupported number: &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-type">Number</span><span class="tk-op">.</span><span class="tk-fn">isInteger</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">?</span> <span class="tk-str">&quot;integer&quot;</span> <span class="tk-op">:</span> <span class="tk-str">&quot;real&quot;</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;boolean&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-str">&quot;integer&quot;</span><span class="tk-op">;</span> <span class="tk-com">// TRUE / FALSE count as 1 / 0</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;string&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-str">&quot;text&quot;</span><span class="tk-op">;</span>
+  <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-type">Error</span><span class="tk-op">(</span><span class="tk-str">&quot;unsupported value type: &quot;</span> <span class="tk-op">+</span> <span class="tk-kw">typeof</span> <span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Whether this value is NULL. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">isNull</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">null</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">undefined</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Normalize a value to the form actually stored at runtime (boolean -&gt; 0/1, undefined -&gt; null). */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">normalizeValue</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">undefined</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;boolean&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">value</span> <span class="tk-op">?</span> <span class="tk-num">1</span> <span class="tk-op">:</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;number&quot;</span> <span class="tk-op">&amp;</span><span class="tk-op">&amp;</span> <span class="tk-op">!</span><span class="tk-type">Number</span><span class="tk-op">.</span><span class="tk-fn">isFinite</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-type">Error</span><span class="tk-op">(</span><span class="tk-str">&quot;unsupported number: &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">value</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/**
+ * Convert any value to a number; return null when that is not possible.
+ * This is the best-effort conversion used by arithmetic.
+ * @param {unknown} value
+ * @returns {number|null}
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">toNumber</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-fn">isNull</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;number&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">value</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;boolean&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">value</span> <span class="tk-op">?</span> <span class="tk-num">1</span> <span class="tk-op">:</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;string&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">text</span> <span class="tk-op">=</span> <span class="tk-ident">value</span><span class="tk-op">.</span><span class="tk-fn">trim</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">text</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">number</span> <span class="tk-op">=</span> <span class="tk-type">Number</span><span class="tk-op">(</span><span class="tk-ident">text</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-type">Number</span><span class="tk-op">.</span><span class="tk-fn">isFinite</span><span class="tk-op">(</span><span class="tk-ident">number</span><span class="tk-op">)</span> <span class="tk-op">?</span> <span class="tk-ident">number</span> <span class="tk-op">:</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">return</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Convert a value to text (NULL stays NULL). */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">toText</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-fn">isNull</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;string&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">value</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;boolean&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">value</span> <span class="tk-op">?</span> <span class="tk-str">&quot;1&quot;</span> <span class="tk-op">:</span> <span class="tk-str">&quot;0&quot;</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-type">String</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Convert a value to boolean: NULL is false; 0 and the empty string are also false. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">truthy</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-fn">isNull</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">false</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;boolean&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">value</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;number&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">value</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;string&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">text</span> <span class="tk-op">=</span> <span class="tk-ident">value</span><span class="tk-op">.</span><span class="tk-fn">trim</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-op">!</span><span class="tk-op">(</span><span class="tk-ident">text</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;&quot;</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">text</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;0&quot;</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">text</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;false&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">return</span> <span class="tk-kw">true</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Sort weight by type: NULL &lt; number &lt; text (matches SQLite ORDER BY). */</span>
+<span class="tk-kw">function</span> <span class="tk-fn">typeRank</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-fn">isNull</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;number&quot;</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;boolean&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-num">2</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/**
+ * Compare two values, returning a negative number / 0 / a positive number.
+ *
+ * This is the total order used for sorting:
+ *   - NULL sorts first
+ *   - numbers by magnitude
+ *   - text lexicographically
+ *   - numbers always sort before text
+ *
+ * Note: this is not SQL's equality test. A comparison with NULL yields UNKNOWN,
+ * so use IS NULL to test for NULL.
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">compareValues</span><span class="tk-op">(</span><span class="tk-ident">a</span><span class="tk-op">,</span> <span class="tk-ident">b</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">left</span> <span class="tk-op">=</span> <span class="tk-fn">normalizeValue</span><span class="tk-op">(</span><span class="tk-ident">a</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">right</span> <span class="tk-op">=</span> <span class="tk-fn">normalizeValue</span><span class="tk-op">(</span><span class="tk-ident">b</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">rankA</span> <span class="tk-op">=</span> <span class="tk-fn">typeRank</span><span class="tk-op">(</span><span class="tk-ident">left</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">rankB</span> <span class="tk-op">=</span> <span class="tk-fn">typeRank</span><span class="tk-op">(</span><span class="tk-ident">right</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">rankA</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">rankB</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">rankA</span> <span class="tk-op">-</span> <span class="tk-ident">rankB</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">rankA</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">rankA</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-num">1</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">left</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">right</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-ident">left</span> <span class="tk-op">&lt;</span> <span class="tk-ident">right</span> <span class="tk-op">?</span> <span class="tk-op">-</span><span class="tk-num">1</span> <span class="tk-op">:</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">left</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">right</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">left</span> <span class="tk-op">&lt;</span> <span class="tk-ident">right</span> <span class="tk-op">?</span> <span class="tk-op">-</span><span class="tk-num">1</span> <span class="tk-op">:</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/**
+ * Evaluate an SQL comparison.
+ *
+ * Returns true / false or null (meaning UNKNOWN):
+ *   NULL = 1         -&gt; UNKNOWN
+ *   UNKNOWN AND TRUE -&gt; UNKNOWN
+ *   WHERE keeps only rows that are TRUE
+ *
+ * @param {string} op &quot;=&quot; | &quot;!=&quot; | &quot;&lt;&quot; | &quot;&lt;=&quot; | &quot;&gt;&quot; | &quot;&gt;=&quot;
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">compare</span><span class="tk-op">(</span><span class="tk-ident">op</span><span class="tk-op">,</span> <span class="tk-ident">a</span><span class="tk-op">,</span> <span class="tk-ident">b</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">left</span> <span class="tk-op">=</span> <span class="tk-fn">normalizeValue</span><span class="tk-op">(</span><span class="tk-ident">a</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">right</span> <span class="tk-op">=</span> <span class="tk-fn">normalizeValue</span><span class="tk-op">(</span><span class="tk-ident">b</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-fn">isNull</span><span class="tk-op">(</span><span class="tk-ident">left</span><span class="tk-op">)</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-fn">isNull</span><span class="tk-op">(</span><span class="tk-ident">right</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">cmp</span> <span class="tk-op">=</span> <span class="tk-fn">compareValues</span><span class="tk-op">(</span><span class="tk-ident">left</span><span class="tk-op">,</span> <span class="tk-ident">right</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">switch</span> <span class="tk-op">(</span><span class="tk-ident">op</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">case</span> <span class="tk-str">&quot;=&quot;</span><span class="tk-op">:</span>
+    <span class="tk-kw">case</span> <span class="tk-str">&quot;==&quot;</span><span class="tk-op">:</span>
+      <span class="tk-kw">return</span> <span class="tk-ident">cmp</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+    <span class="tk-kw">case</span> <span class="tk-str">&quot;!=&quot;</span><span class="tk-op">:</span>
+    <span class="tk-kw">case</span> <span class="tk-str">&quot;&lt;&gt;&quot;</span><span class="tk-op">:</span>
+      <span class="tk-kw">return</span> <span class="tk-ident">cmp</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+    <span class="tk-kw">case</span> <span class="tk-str">&quot;&lt;&quot;</span><span class="tk-op">:</span>
+      <span class="tk-kw">return</span> <span class="tk-ident">cmp</span> <span class="tk-op">&lt;</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+    <span class="tk-kw">case</span> <span class="tk-str">&quot;&lt;=&quot;</span><span class="tk-op">:</span>
+      <span class="tk-kw">return</span> <span class="tk-ident">cmp</span> <span class="tk-op">&lt;</span><span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+    <span class="tk-kw">case</span> <span class="tk-str">&quot;&gt;&quot;</span><span class="tk-op">:</span>
+      <span class="tk-kw">return</span> <span class="tk-ident">cmp</span> <span class="tk-op">&gt;</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+    <span class="tk-kw">case</span> <span class="tk-str">&quot;&gt;=&quot;</span><span class="tk-op">:</span>
+      <span class="tk-kw">return</span> <span class="tk-ident">cmp</span> <span class="tk-op">&gt;</span><span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+    <span class="tk-kw">default</span><span class="tk-op">:</span>
+      <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-type">Error</span><span class="tk-op">(</span><span class="tk-str">&quot;unsupported comparison operator: &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">op</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Three-valued logic AND. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">and3</span><span class="tk-op">(</span><span class="tk-ident">a</span><span class="tk-op">,</span> <span class="tk-ident">b</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">a</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">false</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">b</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">false</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">false</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">a</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">null</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">b</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">null</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-kw">true</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Three-valued logic OR. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">or3</span><span class="tk-op">(</span><span class="tk-ident">a</span><span class="tk-op">,</span> <span class="tk-ident">b</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">a</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">true</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">b</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">true</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">true</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">a</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">null</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">b</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">null</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-kw">false</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Three-valued logic NOT. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">not3</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">null</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-op">!</span><span class="tk-ident">value</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/**
+ * Convert a value for writing according to the column's type affinity.
+ *
+ *   INSERT INTO t (n) VALUES ('42')   -- n is INTEGER -&gt; stored as 42
+ *   INSERT INTO t (s) VALUES (42)     -- s is TEXT    -&gt; stored as '42'
+ *
+ * @param {unknown} value
+ * @param {string} affinity one of the AFFINITY values
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">applyAffinity</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">,</span> <span class="tk-ident">affinity</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">normalized</span> <span class="tk-op">=</span> <span class="tk-fn">normalizeValue</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-fn">isNull</span><span class="tk-op">(</span><span class="tk-ident">normalized</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">switch</span> <span class="tk-op">(</span><span class="tk-ident">affinity</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">case</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">INTEGER</span><span class="tk-op">:</span> <span class="tk-op">{</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">number</span> <span class="tk-op">=</span> <span class="tk-fn">toNumber</span><span class="tk-op">(</span><span class="tk-ident">normalized</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">number</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">null</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">normalized</span><span class="tk-op">;</span> <span class="tk-com">// store as-is when conversion fails (SQLite allows it too)</span>
+      <span class="tk-kw">return</span> <span class="tk-type">Number</span><span class="tk-op">.</span><span class="tk-fn">isInteger</span><span class="tk-op">(</span><span class="tk-ident">number</span><span class="tk-op">)</span> <span class="tk-op">?</span> <span class="tk-ident">number</span> <span class="tk-op">:</span> <span class="tk-ident">Math</span><span class="tk-op">.</span><span class="tk-fn">trunc</span><span class="tk-op">(</span><span class="tk-ident">number</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">case</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">REAL</span><span class="tk-op">:</span> <span class="tk-op">{</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">number</span> <span class="tk-op">=</span> <span class="tk-fn">toNumber</span><span class="tk-op">(</span><span class="tk-ident">normalized</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">return</span> <span class="tk-ident">number</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">null</span> <span class="tk-op">?</span> <span class="tk-ident">normalized</span> <span class="tk-op">:</span> <span class="tk-ident">number</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">case</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">BOOLEAN</span><span class="tk-op">:</span> <span class="tk-op">{</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">normalized</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;string&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-kw">const</span> <span class="tk-ident">text</span> <span class="tk-op">=</span> <span class="tk-ident">normalized</span><span class="tk-op">.</span><span class="tk-fn">trim</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">text</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;true&quot;</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">text</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;1&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+        <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">text</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;false&quot;</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">text</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;0&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">normalized</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;number&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">normalized</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-num">0</span> <span class="tk-op">?</span> <span class="tk-num">0</span> <span class="tk-op">:</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+      <span class="tk-kw">return</span> <span class="tk-fn">truthy</span><span class="tk-op">(</span><span class="tk-ident">normalized</span><span class="tk-op">)</span> <span class="tk-op">?</span> <span class="tk-num">1</span> <span class="tk-op">:</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">case</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">TEXT</span><span class="tk-op">:</span>
+      <span class="tk-kw">return</span> <span class="tk-fn">toText</span><span class="tk-op">(</span><span class="tk-ident">normalized</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">case</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">BLOB</span><span class="tk-op">:</span>
+    <span class="tk-kw">default</span><span class="tk-op">:</span>
+      <span class="tk-kw">return</span> <span class="tk-ident">normalized</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Pattern characters that need escaping in a LIKE pattern. */</span>
+<span class="tk-kw">const</span> <span class="tk-ident">REGEX_SPECIALS</span> <span class="tk-op">=</span> <span class="tk-str">&quot;\\^$.|?*+()[]{}&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-kw">function</span> <span class="tk-fn">escapeRegExp</span><span class="tk-op">(</span><span class="tk-ident">text</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">let</span> <span class="tk-ident">out</span> <span class="tk-op">=</span> <span class="tk-str">&quot;&quot;</span><span class="tk-op">;</span>
+  <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">ch</span> <span class="tk-kw">of</span> <span class="tk-ident">text</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-ident">out</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-ident">REGEX_SPECIALS</span><span class="tk-op">.</span><span class="tk-fn">includes</span><span class="tk-op">(</span><span class="tk-ident">ch</span><span class="tk-op">)</span> <span class="tk-op">?</span> <span class="tk-str">&quot;\\&quot;</span> <span class="tk-op">+</span> <span class="tk-ident">ch</span> <span class="tk-op">:</span> <span class="tk-ident">ch</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">out</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/**
+ * SQL LIKE: % matches any length of text, _ matches exactly one character.
+ * As in SQLite, ASCII letters are case-insensitive; other characters are case-sensitive.
+ *
+ * @param {string} text
+ * @param {string} pattern
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">likeMatch</span><span class="tk-op">(</span><span class="tk-ident">text</span><span class="tk-op">,</span> <span class="tk-ident">pattern</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">source</span> <span class="tk-op">=</span> <span class="tk-fn">toText</span><span class="tk-op">(</span><span class="tk-ident">text</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">like</span> <span class="tk-op">=</span> <span class="tk-fn">toText</span><span class="tk-op">(</span><span class="tk-ident">pattern</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">source</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">null</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">like</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">null</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">let</span> <span class="tk-ident">regex</span> <span class="tk-op">=</span> <span class="tk-str">&quot;^&quot;</span><span class="tk-op">;</span>
+  <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">let</span> <span class="tk-ident">i</span> <span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">;</span> <span class="tk-ident">i</span> <span class="tk-op">&lt;</span> <span class="tk-ident">like</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">;</span> <span class="tk-ident">i</span><span class="tk-op">+</span><span class="tk-op">+</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">ch</span> <span class="tk-op">=</span> <span class="tk-ident">like</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">ch</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;\\&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-ident">i</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+      <span class="tk-ident">regex</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-fn">escapeRegExp</span><span class="tk-op">(</span><span class="tk-ident">like</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span> <span class="tk-op">?</span><span class="tk-op">?</span> <span class="tk-str">&quot;&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span> <span class="tk-kw">else</span> <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">ch</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;%&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-ident">regex</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-str">&quot;[\\s\\S]*&quot;</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span> <span class="tk-kw">else</span> <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">ch</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;_&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-ident">regex</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-str">&quot;[\\s\\S]&quot;</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span> <span class="tk-kw">else</span> <span class="tk-op">{</span>
+      <span class="tk-ident">regex</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-fn">escapeRegExp</span><span class="tk-op">(</span><span class="tk-ident">ch</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+  <span class="tk-op">}</span>
+  <span class="tk-ident">regex</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-str">&quot;$&quot;</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-kw">new</span> <span class="tk-fn">RegExp</span><span class="tk-op">(</span><span class="tk-ident">regex</span><span class="tk-op">,</span> <span class="tk-str">&quot;i&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-ident">source</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/**
+ * Group key for GROUP BY / DISTINCT: differing types are never treated as equal.
+ * The number 1 and the string '1' get different keys.
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">groupKey</span><span class="tk-op">(</span><span class="tk-ident">values</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">values</span>
+    <span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">normalized</span> <span class="tk-op">=</span> <span class="tk-fn">normalizeValue</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-fn">isNull</span><span class="tk-op">(</span><span class="tk-ident">normalized</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-str">&quot;N&quot;</span><span class="tk-op">;</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">normalized</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;number&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-str">&quot;D&quot;</span> <span class="tk-op">+</span> <span class="tk-type">String</span><span class="tk-op">(</span><span class="tk-ident">normalized</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">return</span> <span class="tk-str">&quot;S&quot;</span> <span class="tk-op">+</span> <span class="tk-ident">normalized</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span><span class="tk-op">)</span>
+    <span class="tk-op">.</span><span class="tk-fn">join</span><span class="tk-op">(</span><span class="tk-type">String</span><span class="tk-op">.</span><span class="tk-fn">fromCharCode</span><span class="tk-op">(</span><span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Convert a value to a string suitable for terminal display. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">displayValue</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">normalized</span> <span class="tk-op">=</span> <span class="tk-fn">normalizeValue</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-fn">isNull</span><span class="tk-op">(</span><span class="tk-ident">normalized</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-str">&quot;NULL&quot;</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">normalized</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;string&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-ident">normalized</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-type">String</span><span class="tk-op">(</span><span class="tk-ident">normalized</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Infer a column type from a value (used in query result metadata). */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">inferType</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">return</span> <span class="tk-fn">typeOf</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span></code></pre></div>
+
+  <h2 id="tests">Tests: pin down the semantics</h2>
+  <p>
+    Value-system tests don't need a database; calling the functions directly is enough. That also makes later
+    debugging quick: is the comparison rule wrong, or the query pipeline?
+  </p>
+
+  <div class="file"><div class="file__head"><span class="file__name">tests/values.test.js</span><span class="file__meta">JavaScript · 98 lines · step 4</span></div><pre class="code"><code><span class="tk-kw">import</span> <span class="tk-ident">test</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:test&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-ident">assert</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:assert/strict&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span>
+  <span class="tk-ident">affinityOf</span><span class="tk-op">,</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">,</span> <span class="tk-ident">typeOf</span><span class="tk-op">,</span> <span class="tk-ident">toNumber</span><span class="tk-op">,</span> <span class="tk-ident">toText</span><span class="tk-op">,</span> <span class="tk-ident">truthy</span><span class="tk-op">,</span>
+  <span class="tk-ident">compareValues</span><span class="tk-op">,</span> <span class="tk-ident">compare</span><span class="tk-op">,</span> <span class="tk-ident">and3</span><span class="tk-op">,</span> <span class="tk-ident">or3</span><span class="tk-op">,</span> <span class="tk-ident">not3</span><span class="tk-op">,</span> <span class="tk-ident">applyAffinity</span><span class="tk-op">,</span> <span class="tk-ident">likeMatch</span><span class="tk-op">,</span>
+  <span class="tk-ident">groupKey</span><span class="tk-op">,</span> <span class="tk-ident">displayValue</span><span class="tk-op">,</span>
+<span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;../src/values.js&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;type names map to affinities&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">affinityOf</span><span class="tk-op">(</span><span class="tk-str">&quot;INTEGER&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">INTEGER</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">affinityOf</span><span class="tk-op">(</span><span class="tk-str">&quot;int&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">INTEGER</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">affinityOf</span><span class="tk-op">(</span><span class="tk-str">&quot;DOUBLE&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">REAL</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">affinityOf</span><span class="tk-op">(</span><span class="tk-str">&quot;VARCHAR(20)&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">TEXT</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">affinityOf</span><span class="tk-op">(</span><span class="tk-str">&quot;BOOLEAN&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">BOOLEAN</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;typeOf distinguishes integer, real, text, and NULL&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">typeOf</span><span class="tk-op">(</span><span class="tk-num">1</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">&quot;integer&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">typeOf</span><span class="tk-op">(</span><span class="tk-num">1.5</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">&quot;real&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">typeOf</span><span class="tk-op">(</span><span class="tk-str">&quot;a&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">&quot;text&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">typeOf</span><span class="tk-op">(</span><span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">&quot;null&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">typeOf</span><span class="tk-op">(</span><span class="tk-kw">true</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">&quot;integer&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;toNumber's best-effort conversion&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">toNumber</span><span class="tk-op">(</span><span class="tk-str">&quot;42&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-num">42</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">toNumber</span><span class="tk-op">(</span><span class="tk-str">&quot; 3.5 &quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-num">3.5</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">toNumber</span><span class="tk-op">(</span><span class="tk-str">&quot;abc&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">toNumber</span><span class="tk-op">(</span><span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">toNumber</span><span class="tk-op">(</span><span class="tk-kw">true</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;toText and truthiness&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">toText</span><span class="tk-op">(</span><span class="tk-num">42</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">&quot;42&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">toText</span><span class="tk-op">(</span><span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">truthy</span><span class="tk-op">(</span><span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">false</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">truthy</span><span class="tk-op">(</span><span class="tk-str">&quot;0&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">false</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">truthy</span><span class="tk-op">(</span><span class="tk-str">&quot;false&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">false</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">truthy</span><span class="tk-op">(</span><span class="tk-str">&quot;x&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">true</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">truthy</span><span class="tk-op">(</span><span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">false</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;compareValues: NULL first, numbers before text&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">ok</span><span class="tk-op">(</span><span class="tk-fn">compareValues</span><span class="tk-op">(</span><span class="tk-kw">null</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">)</span> <span class="tk-op">&lt;</span> <span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">ok</span><span class="tk-op">(</span><span class="tk-fn">compareValues</span><span class="tk-op">(</span><span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-str">&quot;a&quot;</span><span class="tk-op">)</span> <span class="tk-op">&lt;</span> <span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">ok</span><span class="tk-op">(</span><span class="tk-fn">compareValues</span><span class="tk-op">(</span><span class="tk-num">2</span><span class="tk-op">,</span> <span class="tk-num">10</span><span class="tk-op">)</span> <span class="tk-op">&lt;</span> <span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">compareValues</span><span class="tk-op">(</span><span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-num">1.0</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">compareValues</span><span class="tk-op">(</span><span class="tk-str">&quot;abc&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;abc&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;compare: comparing with NULL returns null (UNKNOWN)&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">compare</span><span class="tk-op">(</span><span class="tk-str">&quot;=&quot;</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">compare</span><span class="tk-op">(</span><span class="tk-str">&quot;&gt;&quot;</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">compare</span><span class="tk-op">(</span><span class="tk-str">&quot;=&quot;</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">true</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">compare</span><span class="tk-op">(</span><span class="tk-str">&quot;!=&quot;</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-num">2</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">true</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">compare</span><span class="tk-op">(</span><span class="tk-str">&quot;=&quot;</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-str">&quot;1&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">false</span><span class="tk-op">)</span><span class="tk-op">;</span> <span class="tk-com">// different types are not equal</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">compare</span><span class="tk-op">(</span><span class="tk-str">&quot;&lt;&quot;</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-str">&quot;1&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">true</span><span class="tk-op">)</span><span class="tk-op">;</span>  <span class="tk-com">// but numbers sort before text</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;three-valued logic AND / OR / NOT&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">and3</span><span class="tk-op">(</span><span class="tk-kw">true</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">and3</span><span class="tk-op">(</span><span class="tk-kw">false</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">false</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">or3</span><span class="tk-op">(</span><span class="tk-kw">true</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">true</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">or3</span><span class="tk-op">(</span><span class="tk-kw">false</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">not3</span><span class="tk-op">(</span><span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">not3</span><span class="tk-op">(</span><span class="tk-kw">true</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">false</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;type affinity conversion&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">applyAffinity</span><span class="tk-op">(</span><span class="tk-str">&quot;42&quot;</span><span class="tk-op">,</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">INTEGER</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-num">42</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">applyAffinity</span><span class="tk-op">(</span><span class="tk-str">&quot;3.9&quot;</span><span class="tk-op">,</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">INTEGER</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-num">3</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">applyAffinity</span><span class="tk-op">(</span><span class="tk-str">&quot;3.5&quot;</span><span class="tk-op">,</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">REAL</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-num">3.5</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">applyAffinity</span><span class="tk-op">(</span><span class="tk-num">42</span><span class="tk-op">,</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">TEXT</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">&quot;42&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">applyAffinity</span><span class="tk-op">(</span><span class="tk-str">&quot;true&quot;</span><span class="tk-op">,</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">BOOLEAN</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">applyAffinity</span><span class="tk-op">(</span><span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">BOOLEAN</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">applyAffinity</span><span class="tk-op">(</span><span class="tk-kw">null</span><span class="tk-op">,</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">INTEGER</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">applyAffinity</span><span class="tk-op">(</span><span class="tk-str">&quot;abc&quot;</span><span class="tk-op">,</span> <span class="tk-ident">AFFINITY</span><span class="tk-op">.</span><span class="tk-ident">INTEGER</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">&quot;abc&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;LIKE's % and _&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">likeMatch</span><span class="tk-op">(</span><span class="tk-str">&quot;JavaScript&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;Java%&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">true</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">likeMatch</span><span class="tk-op">(</span><span class="tk-str">&quot;Java&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;ja_a&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">true</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">likeMatch</span><span class="tk-op">(</span><span class="tk-str">&quot;Java&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;j%a&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">true</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">likeMatch</span><span class="tk-op">(</span><span class="tk-str">&quot;Java&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;J%x&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">false</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">likeMatch</span><span class="tk-op">(</span><span class="tk-str">&quot;a_b&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;a\\_b&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">true</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">likeMatch</span><span class="tk-op">(</span><span class="tk-kw">null</span><span class="tk-op">,</span> <span class="tk-str">&quot;%&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;groupKey does not conflate 1 and '1'&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">notEqual</span><span class="tk-op">(</span><span class="tk-fn">groupKey</span><span class="tk-op">(</span><span class="tk-op">[</span><span class="tk-num">1</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-fn">groupKey</span><span class="tk-op">(</span><span class="tk-op">[</span><span class="tk-str">&quot;1&quot;</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">groupKey</span><span class="tk-op">(</span><span class="tk-op">[</span><span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-fn">groupKey</span><span class="tk-op">(</span><span class="tk-op">[</span><span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;displayValue&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">displayValue</span><span class="tk-op">(</span><span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">&quot;NULL&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">displayValue</span><span class="tk-op">(</span><span class="tk-str">&quot;x&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">&quot;x&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">displayValue</span><span class="tk-op">(</span><span class="tk-num">3.5</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">&quot;3.5&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span></code></pre></div>
+
+  <div class="checkpoint">
+    <p class="checkpoint__title">Checkpoint — all 11 value-system tests pass</p>
+    <pre class="code"><code>node --test tests/values.test.js</code></pre>
+    <p class="checkpoint__expect">ℹ tests 11
+ℹ pass 11
+ℹ fail 0</p>
+  </div>
+
+  <h2 id="recap">Chapter recap</h2>
+  <ul>
+    <li>SQL has three-valued logic; comparing with NULL yields UNKNOWN, and WHERE keeps only TRUE.</li>
+    <li>Type affinity turns <code>'42'</code> into a number when it's stored in an INTEGER column.</li>
+    <li>Comparison (<code>=</code>) and ordering (<code>ORDER BY</code>) use different rules; numbers always sort before text.</li>
+  </ul>
+
+  <div class="exercise">
+    <p class="exercise__title">Exercises</p>
+    <ol>
+      <li>Support <code>IS TRUE</code> / <code>IS NOT TRUE</code>. Hint: it's a lot like <code>IS NULL</code>, but you have to handle 0/1.</li>
+      <li>Implement the <code>CASEWHEN</code> version of <code>substr</code> with negative indexes (<code>SUBSTR('hello', -3)</code> returns <code>'llo'</code>).</li>
+      <li>Write a test proving that <code>compareValues(1, '1')</code> isn't 0, and explain why that matters for GROUP BY.</li>
+    </ol>
+  </div>
+
+  <h2 id="vocab">Chapter glossary</h2>
+  <dl class="vocab">
+    <dt>Three-valued Logic</dt><dd>A logic system with true / false / UNKNOWN; SQL uses UNKNOWN for "don't know".</dd>
+    <dt>Type Affinity</dt><dd>A column's preference for a type; values are converted on write when possible, but it isn't a hard restriction.</dd>
+    <dt>Total Order</dt><dd>Any two values can be compared; sorting requires this relation.</dd>
+  </dl>
+</article>
+
+
+      <footer class="chapter-foot site-chapter-foot">
+        <div class="chapter-foot__inner">
+          <p class="chapter-foot__label">Finished this chapter? Mark it complete and the progress stays in this browser.</p>
+          <button id="mark-complete" class="btn btn--complete" type="button"
+                  data-chapter="" aria-pressed="false">Mark chapter complete</button>
+        </div>
+        <nav class="pager" aria-label="Previous and next chapter">
+          <a class="pager-link pager-link--prev" href="../chapters/ch03.html"><span class="pager-link__meta">Previous chapter</span><span class="pager-link__title">Chapter 3 · Parsing</span></a>
+          <a class="pager-link pager-link--next" href="../chapters/ch05.html"><span class="pager-link__meta">Next chapter</span><span class="pager-link__title">Chapter 5 · Storage layer</span></a>
+        </nav>
+      </footer>
+    </div>
+    <aside id="page-toc" class="page-toc" aria-label="On this page"></aside>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <p><strong>Build a SQL Database Engine from Scratch</strong> — ten chapters that start with a single character and end with a database that persists, queries, and transacts.</p>
+        <p class="footer-mono">Zero dependencies · Node.js only · built by hand</p>
+      </div>
+      <div>
+        <p class="footer-mono"><a href="../playground.html">SQL Playground</a> · <a href="../reference.html">Syntax Reference</a> · <a href="../index.html">Home</a></p>
+        <p class="footer-mono">Switch between light and dark themes in the top-right corner.</p>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="search-overlay" role="dialog" aria-modal="true" aria-label="Search chapters" aria-hidden="true">
+    <div class="search-panel">
+      <div class="search-panel__head">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <input id="search-input" type="search" placeholder="Search chapter titles or summaries…"
+               autocomplete="off" spellcheck="false" aria-label="Search chapters">
+        <span class="search-panel__esc">Esc</span>
+      </div>
+      <ul class="search-results" id="search-results"></ul>
+      <div class="search-panel__foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> select</span>
+        <span><kbd>Enter</kbd> open</span>
+        <span><kbd>/</kbd> open search</span>
+        <span><kbd>[</kbd><kbd>]</kbd> previous / next chapter</span>
+      </div>
+    </div>
+  </div>
+
+  <noscript>
+    <p style="max-width:74ch;margin:1rem auto;padding:0 1rem;font-family:monospace;color:#6e675c">
+      The main content of this site is readable without JavaScript; search, theme switching, and progress tracking need it enabled.
+    </p>
+  </noscript>
+</body>
+</html>

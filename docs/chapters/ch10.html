@@ -1,0 +1,1309 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chapter 10 · Persistence and transactions — Building an SQL database engine from scratch</title>
+  <meta name="description" content="4096-byte pages, slotted pages, the catalog, a CRC32 journal, and crash recovery.">
+  <meta property="og:title" content="Chapter 10 · Persistence and transactions — Building an SQL database engine from scratch">
+  <meta property="og:description" content="4096-byte pages, slotted pages, the catalog, a CRC32 journal, and crash recovery.">
+  <meta property="og:type" content="article">
+  <meta property="og:locale" content="en_US">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("sql-theme");
+        document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script defer src="../assets/toc.js"></script>
+  <script defer src="../assets/site.js"></script>
+</head>
+<body class="page page--chapter" data-page-kind="chapter"
+      data-prev-url="../chapters/ch09.html" data-next-url="">
+
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <div id="reading-progress" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="site-header__left">
+      <button id="sidebar-toggle" class="icon-btn" type="button"
+              aria-label="Open chapter navigation" aria-controls="sidebar" aria-expanded="false">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <path d="M2 4h12M2 8h12M2 12h12" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <a class="brand" href="../index.html">
+        <span class="brand__mark" aria-hidden="true">SQL</span>
+        <span class="brand__name">SQL from Scratch</span>
+      </a>
+      <span class="header-chapter">Chapter 10 · Persistence and transactions</span>
+    </div>
+    <div class="site-header__right">
+      <span class="header-progress" data-progress-label>0/10 complete</span>
+      <button id="search-toggle" class="icon-btn icon-btn--search" type="button"
+              aria-label="Search chapters" aria-haspopup="dialog">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <span class="icon-btn__label">Search</span>
+        <span class="kbd-hint">/</span>
+      </button>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
+        <svg class="theme-icon theme-icon--sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="8" cy="8" r="3"/>
+          <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" stroke-linecap="round"/>
+        </svg>
+        <svg class="theme-icon theme-icon--moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M13.4 9.6A5.8 5.8 0 0 1 6.4 2.6a5.8 5.8 0 1 0 7 7Z" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <aside class="sidebar" id="sidebar" aria-label="Chapter navigation">
+    <div class="sidebar__scroll">
+      <p class="sidebar__heading">Chapter Index</p>
+      <ol class="toc-list"><li class="toc-item"><a class="toc-link" href="../chapters/ch01.html"><span class="toc-num">01</span><span class="toc-title">Orientation and skeleton</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch02.html"><span class="toc-num">02</span><span class="toc-title">Lexing</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch03.html"><span class="toc-num">03</span><span class="toc-title">Parsing</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch04.html"><span class="toc-num">04</span><span class="toc-title">Values and types</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch05.html"><span class="toc-num">05</span><span class="toc-title">Storage layer</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch06.html"><span class="toc-num">06</span><span class="toc-title">SELECT pipeline</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch07.html"><span class="toc-num">07</span><span class="toc-title">Aggregates and grouping</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch08.html"><span class="toc-num">08</span><span class="toc-title">Update and delete</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch09.html"><span class="toc-num">09</span><span class="toc-title">JOIN</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch10.html"><span class="toc-num">10</span><span class="toc-title">Persistence and transactions</span></a></li></ol>
+      <p class="sidebar__heading">Tools</p>
+      <nav class="nav-list" aria-label="Tools">
+        <a class="toc-link" href="../playground.html"><span class="toc-num">▸</span><span class="toc-title">SQL Playground</span></a>
+        <a class="toc-link" href="../reference.html"><span class="toc-num">▸</span><span class="toc-title">Syntax Reference</span></a>
+        <a class="toc-link" href="../index.html"><span class="toc-num">▸</span><span class="toc-title">Home &amp; Roadmap</span></a>
+      </nav>
+    </div>
+    <div class="sidebar__foot">
+      <a href="../index.html"><span>Home</span><span>⌂</span></a>
+      <a href="../playground.html"><span>Playground</span><span>⟩</span></a>
+      <a href="../reference.html"><span>Reference</span><span>⌗</span></a>
+      <p class="sidebar__version">SQL engine tutorial · 0.1<br>Zero dependencies · works offline</p>
+    </div>
+  </aside>
+  <div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
+
+  <main id="main" class="layout">
+    <div class="content-column">
+      <aside class="chapter-meta">
+  <h2 class="chapter-meta__title">Chapter info</h2>
+  <ul class="chapter-meta__list">
+    <li><strong>Estimated time</strong> 80 minutes (the longest chapter)</li>
+    <li><strong>Difficulty</strong> ★★★★★ Requires some patience, but it pays off</li>
+    <li><strong>What you'll learn</strong> Page format, slotted pages, catalog, CRC32 journal, crash recovery, transactions</li>
+    <li><strong>What you'll build</strong> <code>storage/page.js</code>, <code>storage/journal.js</code>, <code>storage/disk.js</code>, <code>src/node.js</code>, changes to <code>database.js</code></li>
+  </ul>
+</aside>
+
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Chapter 10 / Persistence and transactions</p>
+    <h1>Data survives a restart: pages, journals, and transactions</h1>
+    <p class="chapter-lead">
+      The database we've built has a fatal flaw: quit the program and the data is gone. This chapter writes
+      the whole database to a file, and does it so that "losing power mid-write won't break it". This is
+      the chapter where the project most resembles a real database.
+    </p>
+  </header>
+
+  <h2 id="why-pages">Why not just JSON.stringify?</h2>
+  <p>
+    The simplest persistence is obviously: on every save, turn the whole database into JSON and write it
+    to a file. That works at small data sizes, but it runs into three problems:
+  </p>
+  <ul>
+    <li><strong>You can't change just a part</strong>: updating one row still rewrites the entire file.</li>
+    <li><strong>A crash mid-write destroys it</strong>: the file may be only half written.</li>
+    <li><strong>It doesn't scale</strong>: adding caching, building indexes, or supporting large files later will all be cramped.</li>
+  </ul>
+  <p>
+    Real databases solve this with fixed-size <strong>pages</strong>. Our format is simple: 4096 bytes per
+    page, page 0 is the file header, followed by the catalog (table schemas) and the heap (data rows).
+  </p>
+
+  <h2 id="layout">What the file looks like</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Page number</th><th>Contents</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td>header</td><td>magic <code>SQLDB01</code>, version, pageCount, catalog location</td></tr>
+        <tr><td>1…k</td><td>catalog</td><td>the schema of every table and its heap root page number, as a chain of pages linked by next</td></tr>
+        <tr><td>k+1…</td><td>heap</td><td>each table's rows, stored in slotted pages and chained by next in the same way</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    The heap page layout is the classic design from database textbooks: <strong>the slot array grows from
+    the front, cells grow from the back</strong>, and free space sits in between. Each slot records the
+    cell's offset and length, so deleting or moving a row only touches the slot rather than the whole page.
+  </p>
+  <pre class="code"><code>+0   type = 3        (1 byte)
++4   next page       (u32)
++8   slot count      (u16)
++10  free offset     (u16)   // how much has been used from the end of the page
++12  slot[0]  offset(u16) + length(u16)
++16  slot[1]  ...
+     ...
+     free space
+end of page  cell[0] JSON bytes
+     cell[1]  ...
+  </code></pre>
+
+  <div class="file"><div class="file__head"><span class="file__name">src/storage/page.js</span><span class="file__meta">JavaScript · 163 lines · step 10</span></div><pre class="code"><code><span class="tk-com">/**
+ * Page Format
+ *
+ * A database file is not one big JSON blob but fixed-size blocks called pages (4096 bytes here).
+ * Fixed-size pages have advantages:
+ *   - reads and writes touch only the needed page instead of rewriting the whole file
+ *   - caching, transactions, and crash recovery are easier to implement
+ *
+ * This file only packs data into pages and extracts it back; it never does file I/O,
+ * which makes it ideal for unit tests.
+ *
+ * Page types:
+ *   0  file header (magic, version, pageCount, catalog location...)
+ *   2  catalog (JSON of table schemas, possibly spanning pages)
+ *   3  heap (rows of one table, slotted page)
+ *
+ * Heap page layout:
+ *
+ *   +0   type (1 byte) = 3
+ *   +4   next page number (u32, 0 means no next page)
+ *   +8   slot count (u16)
+ *   +10  free offset (u16): bytes used from the end of the page inward
+ *   +12  slot array, each slot is 4 bytes: offset (u16) + length (u16)
+ *   ...  free space
+ *   end   cell data (one JSON row per line), growing backwards
+ */</span>
+
+<span class="tk-kw">export</span> <span class="tk-kw">const</span> <span class="tk-ident">PAGE_SIZE</span> <span class="tk-op">=</span> <span class="tk-num">4096</span><span class="tk-op">;</span>
+<span class="tk-kw">export</span> <span class="tk-kw">const</span> <span class="tk-ident">PAGE_HEADER_SIZE</span> <span class="tk-op">=</span> <span class="tk-num">12</span><span class="tk-op">;</span>
+
+<span class="tk-kw">export</span> <span class="tk-kw">const</span> <span class="tk-ident">PAGE_TYPE_CATALOG</span> <span class="tk-op">=</span> <span class="tk-num">2</span><span class="tk-op">;</span>
+<span class="tk-kw">export</span> <span class="tk-kw">const</span> <span class="tk-ident">PAGE_TYPE_HEAP</span> <span class="tk-op">=</span> <span class="tk-num">3</span><span class="tk-op">;</span>
+
+<span class="tk-com">/** How many payload bytes fit in a catalog or free-list page. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">const</span> <span class="tk-ident">DATA_CHUNK_SIZE</span> <span class="tk-op">=</span> <span class="tk-ident">PAGE_SIZE</span> <span class="tk-op">-</span> <span class="tk-ident">PAGE_HEADER_SIZE</span><span class="tk-op">;</span>
+
+<span class="tk-com">/** Create an empty heap page. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">createHeapPage</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">page</span> <span class="tk-op">=</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-fn">alloc</span><span class="tk-op">(</span><span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">writeUInt8</span><span class="tk-op">(</span><span class="tk-ident">PAGE_TYPE_HEAP</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">page</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">pageType</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">readUInt8</span><span class="tk-op">(</span><span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">pageNext</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">readUInt32LE</span><span class="tk-op">(</span><span class="tk-num">4</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">setPageNext</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">,</span> <span class="tk-ident">nextPage</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">writeUInt32LE</span><span class="tk-op">(</span><span class="tk-ident">nextPage</span><span class="tk-op">,</span> <span class="tk-num">4</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">heapSlotCount</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">readUInt16LE</span><span class="tk-op">(</span><span class="tk-num">8</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">heapFreeOffset</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">readUInt16LE</span><span class="tk-op">(</span><span class="tk-num">10</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** How many bytes remain on this page for cells. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">heapFreeBytes</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">PAGE_SIZE</span> <span class="tk-op">-</span> <span class="tk-ident">PAGE_HEADER_SIZE</span> <span class="tk-op">-</span> <span class="tk-fn">heapSlotCount</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span> <span class="tk-op">*</span> <span class="tk-num">4</span> <span class="tk-op">-</span> <span class="tk-fn">heapFreeOffset</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/**
+ * Put a cell (a serialized row) into a heap page.
+ * Returns false when there is not enough space; the caller must use another page.
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">appendHeapCell</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">,</span> <span class="tk-ident">cell</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-fn">heapFreeBytes</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span> <span class="tk-op">&lt;</span> <span class="tk-ident">cell</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">+</span> <span class="tk-num">4</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">false</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">const</span> <span class="tk-ident">slotCount</span> <span class="tk-op">=</span> <span class="tk-fn">heapSlotCount</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">freeOffset</span> <span class="tk-op">=</span> <span class="tk-fn">heapFreeOffset</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">cellOffset</span> <span class="tk-op">=</span> <span class="tk-ident">PAGE_SIZE</span> <span class="tk-op">-</span> <span class="tk-ident">freeOffset</span> <span class="tk-op">-</span> <span class="tk-ident">cell</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">;</span>
+
+  <span class="tk-ident">cell</span><span class="tk-op">.</span><span class="tk-fn">copy</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">,</span> <span class="tk-ident">cellOffset</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">const</span> <span class="tk-ident">slotOffset</span> <span class="tk-op">=</span> <span class="tk-ident">PAGE_HEADER_SIZE</span> <span class="tk-op">+</span> <span class="tk-ident">slotCount</span> <span class="tk-op">*</span> <span class="tk-num">4</span><span class="tk-op">;</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">writeUInt16LE</span><span class="tk-op">(</span><span class="tk-ident">cellOffset</span><span class="tk-op">,</span> <span class="tk-ident">slotOffset</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">writeUInt16LE</span><span class="tk-op">(</span><span class="tk-ident">cell</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">,</span> <span class="tk-ident">slotOffset</span> <span class="tk-op">+</span> <span class="tk-num">2</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">writeUInt16LE</span><span class="tk-op">(</span><span class="tk-ident">slotCount</span> <span class="tk-op">+</span> <span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-num">8</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">writeUInt16LE</span><span class="tk-op">(</span><span class="tk-ident">freeOffset</span> <span class="tk-op">+</span> <span class="tk-ident">cell</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">,</span> <span class="tk-num">10</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-kw">true</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Read all cells from a heap page (in insertion order). */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">heapCells</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">count</span> <span class="tk-op">=</span> <span class="tk-fn">heapSlotCount</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">cells</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+  <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">let</span> <span class="tk-ident">i</span> <span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">;</span> <span class="tk-ident">i</span> <span class="tk-op">&lt;</span> <span class="tk-ident">count</span><span class="tk-op">;</span> <span class="tk-ident">i</span><span class="tk-op">+</span><span class="tk-op">+</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">slotOffset</span> <span class="tk-op">=</span> <span class="tk-ident">PAGE_HEADER_SIZE</span> <span class="tk-op">+</span> <span class="tk-ident">i</span> <span class="tk-op">*</span> <span class="tk-num">4</span><span class="tk-op">;</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">offset</span> <span class="tk-op">=</span> <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">readUInt16LE</span><span class="tk-op">(</span><span class="tk-ident">slotOffset</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">length</span> <span class="tk-op">=</span> <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">readUInt16LE</span><span class="tk-op">(</span><span class="tk-ident">slotOffset</span> <span class="tk-op">+</span> <span class="tk-num">2</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">length</span> <span class="tk-op">&gt;</span> <span class="tk-num">0</span><span class="tk-op">)</span> <span class="tk-ident">cells</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">subarray</span><span class="tk-op">(</span><span class="tk-ident">offset</span><span class="tk-op">,</span> <span class="tk-ident">offset</span> <span class="tk-op">+</span> <span class="tk-ident">length</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">cells</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Create a data page for the catalog / free list. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">createDataPage</span><span class="tk-op">(</span><span class="tk-ident">type</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">page</span> <span class="tk-op">=</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-fn">alloc</span><span class="tk-op">(</span><span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">writeUInt8</span><span class="tk-op">(</span><span class="tk-ident">type</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">page</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">writeDataChunk</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">,</span> <span class="tk-ident">chunk</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-ident">chunk</span><span class="tk-op">.</span><span class="tk-fn">copy</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">,</span> <span class="tk-ident">PAGE_HEADER_SIZE</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">writeUInt16LE</span><span class="tk-op">(</span><span class="tk-ident">chunk</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">,</span> <span class="tk-num">8</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">readDataChunk</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">length</span> <span class="tk-op">=</span> <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">readUInt16LE</span><span class="tk-op">(</span><span class="tk-num">8</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">subarray</span><span class="tk-op">(</span><span class="tk-ident">PAGE_HEADER_SIZE</span><span class="tk-op">,</span> <span class="tk-ident">PAGE_HEADER_SIZE</span> <span class="tk-op">+</span> <span class="tk-ident">length</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">// ---------------------------------------------------------------------------</span>
+<span class="tk-com">// File header (page 0)</span>
+<span class="tk-com">// ---------------------------------------------------------------------------</span>
+
+<span class="tk-kw">export</span> <span class="tk-kw">const</span> <span class="tk-ident">MAGIC</span> <span class="tk-op">=</span> <span class="tk-str">&quot;SQLDB01\n&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">export</span> <span class="tk-kw">const</span> <span class="tk-ident">FORMAT_VERSION</span> <span class="tk-op">=</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+
+<span class="tk-com">/**
+ * Create the header page.
+ * @param {{pageCount:number, catalogRoot:number, catalogLength:number, freeListRoot:number}} info
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">createHeaderPage</span><span class="tk-op">(</span><span class="tk-ident">info</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">page</span> <span class="tk-op">=</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-fn">alloc</span><span class="tk-op">(</span><span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">write</span><span class="tk-op">(</span><span class="tk-ident">MAGIC</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-str">&quot;ascii&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">writeUInt32LE</span><span class="tk-op">(</span><span class="tk-ident">FORMAT_VERSION</span><span class="tk-op">,</span> <span class="tk-num">8</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">writeUInt32LE</span><span class="tk-op">(</span><span class="tk-ident">PAGE_SIZE</span><span class="tk-op">,</span> <span class="tk-num">12</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">writeUInt32LE</span><span class="tk-op">(</span><span class="tk-ident">info</span><span class="tk-op">.</span><span class="tk-ident">pageCount</span><span class="tk-op">,</span> <span class="tk-num">16</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">writeUInt32LE</span><span class="tk-op">(</span><span class="tk-ident">info</span><span class="tk-op">.</span><span class="tk-ident">catalogRoot</span><span class="tk-op">,</span> <span class="tk-num">20</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">writeUInt32LE</span><span class="tk-op">(</span><span class="tk-ident">info</span><span class="tk-op">.</span><span class="tk-ident">catalogLength</span><span class="tk-op">,</span> <span class="tk-num">24</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">writeUInt32LE</span><span class="tk-op">(</span><span class="tk-ident">info</span><span class="tk-op">.</span><span class="tk-ident">freeListRoot</span><span class="tk-op">,</span> <span class="tk-num">28</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">page</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/**
+ * Parse the header page; returns null if the file is not ours.
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">parseHeaderPage</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">magic</span> <span class="tk-op">=</span> <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">subarray</span><span class="tk-op">(</span><span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-num">8</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">toString</span><span class="tk-op">(</span><span class="tk-str">&quot;ascii&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">magic</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">MAGIC</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">version</span> <span class="tk-op">=</span> <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">readUInt32LE</span><span class="tk-op">(</span><span class="tk-num">8</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">version</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">FORMAT_VERSION</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-type">Error</span><span class="tk-op">(</span><span class="tk-str">&quot;Unsupported database format version: &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">version</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">pageSize</span> <span class="tk-op">=</span> <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">readUInt32LE</span><span class="tk-op">(</span><span class="tk-num">12</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">pageSize</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-type">Error</span><span class="tk-op">(</span><span class="tk-str">&quot;Page size mismatch: &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">pageSize</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">return</span> <span class="tk-op">{</span>
+    <span class="tk-ident">pageCount</span><span class="tk-op">:</span> <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">readUInt32LE</span><span class="tk-op">(</span><span class="tk-num">16</span><span class="tk-op">)</span><span class="tk-op">,</span>
+    <span class="tk-ident">catalogRoot</span><span class="tk-op">:</span> <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">readUInt32LE</span><span class="tk-op">(</span><span class="tk-num">20</span><span class="tk-op">)</span><span class="tk-op">,</span>
+    <span class="tk-ident">catalogLength</span><span class="tk-op">:</span> <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">readUInt32LE</span><span class="tk-op">(</span><span class="tk-num">24</span><span class="tk-op">)</span><span class="tk-op">,</span>
+    <span class="tk-ident">freeListRoot</span><span class="tk-op">:</span> <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">readUInt32LE</span><span class="tk-op">(</span><span class="tk-num">28</span><span class="tk-op">)</span><span class="tk-op">,</span>
+  <span class="tk-op">}</span><span class="tk-op">;</span>
+<span class="tk-op">}</span></code></pre></div>
+
+  <h2 id="pager">Pager: responsible only for "page n"</h2>
+  <p>
+    <code>Pager</code> has a single responsibility: open the file, read page n, write page n, allocate a
+    new page number. It keeps a page cache and a <code>dirty</code> list recording which pages this
+    transaction changed. Separating "pages" from "data structures" is the key to maintainable database
+    code.
+  </p>
+
+  <h2 id="diskstore">DiskStore: turning a snapshot into pages</h2>
+  <p>
+    <code>DiskStore</code> implements the same interface as <code>MemoryStore</code>:
+    <code>load()</code>, <code>save()</code>, <code>close()</code>. It is responsible for:
+  </p>
+  <ol>
+    <li>Serializing every row of every table to JSON and packing it into the heap page chain.</li>
+    <li>Writing every schema and each table's root page number into the catalog page chain.</li>
+    <li>Writing the header page, recording pageCount and the catalog location.</li>
+    <li>Calling <code>commit()</code>: write the journal first, then the body, then delete the journal.</li>
+  </ol>
+  <p>
+    Free pages aren't written to the file; they're <strong>computed on open</strong>: take every page in
+    the file, subtract the header, catalog, and heap, and the rest are free. Maintaining one less free
+    list means one less thing that can be corrupted.
+  </p>
+
+  <div class="file"><div class="file__head"><span class="file__name">src/storage/disk.js</span><span class="file__meta">JavaScript · 307 lines · step 10</span></div><pre class="code"><code><span class="tk-com">/**
+ * DiskStore: persist the database to disk
+ *
+ * It has two parts:
+ *
+ *   Pager  handles &quot;the 4096 bytes of page n&quot; - opening the file, reading/writing pages, allocating new pages
+ *   DiskStore handles &quot;how data becomes pages&quot; - catalog, heap, commit
+ *
+ * File layout (page 0 is the header):
+ *
+ *   page 0        header: magic, version, pageCount, catalog location
+ *   catalog pages JSON of table schemas (may span pages, chained via next)
+ *   heap pages    rows of each table (slotted pages, chained via next)
+ *
+ * Free pages are not written to the file; they are computed on open:
+ * all pages in the file minus header / catalog / heap leaves the empty ones.
+ * This avoids maintaining a separate free list and removes one more thing that can get corrupted.
+ */</span>
+<span class="tk-kw">import</span> <span class="tk-ident">fs</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:fs&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span>
+  <span class="tk-ident">PAGE_SIZE</span><span class="tk-op">,</span> <span class="tk-ident">PAGE_HEADER_SIZE</span><span class="tk-op">,</span> <span class="tk-ident">PAGE_TYPE_CATALOG</span><span class="tk-op">,</span>
+  <span class="tk-ident">appendHeapCell</span><span class="tk-op">,</span> <span class="tk-ident">createDataPage</span><span class="tk-op">,</span> <span class="tk-ident">createHeaderPage</span><span class="tk-op">,</span> <span class="tk-ident">createHeapPage</span><span class="tk-op">,</span>
+  <span class="tk-ident">heapCells</span><span class="tk-op">,</span> <span class="tk-ident">pageNext</span><span class="tk-op">,</span> <span class="tk-ident">parseHeaderPage</span><span class="tk-op">,</span> <span class="tk-ident">readDataChunk</span><span class="tk-op">,</span> <span class="tk-ident">setPageNext</span><span class="tk-op">,</span> <span class="tk-ident">writeDataChunk</span><span class="tk-op">,</span>
+<span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;./page.js&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">recoverJournal</span><span class="tk-op">,</span> <span class="tk-ident">writeJournal</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;./journal.js&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-com">// ---------------------------------------------------------------------------</span>
+<span class="tk-com">// Pager: page-level file I/O</span>
+<span class="tk-com">// ---------------------------------------------------------------------------</span>
+
+<span class="tk-kw">export</span> <span class="tk-kw">class</span> <span class="tk-ident">Pager</span> <span class="tk-op">{</span>
+  <span class="tk-com">/** @param {string} path */</span>
+  <span class="tk-fn">constructor</span><span class="tk-op">(</span><span class="tk-ident">path</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">path</span> <span class="tk-op">=</span> <span class="tk-ident">path</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">fd</span> <span class="tk-op">=</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+    <span class="tk-com">/** @type {Map&lt;number, Buffer&gt;} */</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">cache</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-type">Map</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-com">/** @type {Map&lt;number, Buffer&gt;} pages modified by this transaction */</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">dirty</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-type">Map</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pageCount</span> <span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-fn">open</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">exists</span> <span class="tk-op">=</span> <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">existsSync</span><span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">path</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">fd</span> <span class="tk-op">=</span> <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">openSync</span><span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">path</span><span class="tk-op">,</span> <span class="tk-ident">exists</span> <span class="tk-op">?</span> <span class="tk-str">&quot;r+&quot;</span> <span class="tk-op">:</span> <span class="tk-str">&quot;w+&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pageCount</span> <span class="tk-op">=</span> <span class="tk-ident">exists</span> <span class="tk-op">?</span> <span class="tk-ident">Math</span><span class="tk-op">.</span><span class="tk-fn">ceil</span><span class="tk-op">(</span><span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">statSync</span><span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">path</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">size</span> <span class="tk-op">/</span> <span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span> <span class="tk-op">:</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-fn">readPage</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">cache</span><span class="tk-op">.</span><span class="tk-fn">has</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">cache</span><span class="tk-op">.</span><span class="tk-fn">get</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">pageNumber</span> <span class="tk-op">&gt;</span><span class="tk-op">=</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pageCount</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-fn">alloc</span><span class="tk-op">(</span><span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">buffer</span> <span class="tk-op">=</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-fn">alloc</span><span class="tk-op">(</span><span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">readSync</span><span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">fd</span><span class="tk-op">,</span> <span class="tk-ident">buffer</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-ident">PAGE_SIZE</span><span class="tk-op">,</span> <span class="tk-ident">pageNumber</span> <span class="tk-op">*</span> <span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">cache</span><span class="tk-op">.</span><span class="tk-fn">set</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">,</span> <span class="tk-ident">buffer</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-ident">buffer</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-fn">writePage</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">,</span> <span class="tk-ident">buffer</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">buffer</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-type">Error</span><span class="tk-op">(</span><span class="tk-str">&quot;Page size must be &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">PAGE_SIZE</span> <span class="tk-op">+</span> <span class="tk-str">&quot; bytes&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">cache</span><span class="tk-op">.</span><span class="tk-fn">set</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">,</span> <span class="tk-ident">buffer</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">dirty</span><span class="tk-op">.</span><span class="tk-fn">set</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">,</span> <span class="tk-ident">buffer</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">pageNumber</span> <span class="tk-op">&gt;</span><span class="tk-op">=</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pageCount</span><span class="tk-op">)</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pageCount</span> <span class="tk-op">=</span> <span class="tk-ident">pageNumber</span> <span class="tk-op">+</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** Allocate a new page number (does not write contents). */</span>
+  <span class="tk-fn">allocatePage</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">pageNumber</span> <span class="tk-op">=</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pageCount</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pageCount</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-ident">pageNumber</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** Write dirty pages to the file and fsync. */</span>
+  <span class="tk-fn">flush</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-op">[</span><span class="tk-ident">pageNumber</span><span class="tk-op">,</span> <span class="tk-ident">buffer</span><span class="tk-op">]</span> <span class="tk-kw">of</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">dirty</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">writeSync</span><span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">fd</span><span class="tk-op">,</span> <span class="tk-ident">buffer</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-ident">PAGE_SIZE</span><span class="tk-op">,</span> <span class="tk-ident">pageNumber</span> <span class="tk-op">*</span> <span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">fsyncSync</span><span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">fd</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-fn">close</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">fd</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">null</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">closeSync</span><span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">fd</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">fd</span> <span class="tk-op">=</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+  <span class="tk-op">}</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">// ---------------------------------------------------------------------------</span>
+<span class="tk-com">// DiskStore</span>
+<span class="tk-com">// ---------------------------------------------------------------------------</span>
+
+<span class="tk-kw">export</span> <span class="tk-kw">class</span> <span class="tk-ident">DiskStore</span> <span class="tk-op">{</span>
+  <span class="tk-com">/** @param {string} path database file path */</span>
+  <span class="tk-fn">constructor</span><span class="tk-op">(</span><span class="tk-ident">path</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">path</span><span class="tk-op">)</span> <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-type">Error</span><span class="tk-op">(</span><span class="tk-str">&quot;DiskStore requires a file path&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">path</span> <span class="tk-op">=</span> <span class="tk-ident">path</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">persistent</span> <span class="tk-op">=</span> <span class="tk-kw">true</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-fn">Pager</span><span class="tk-op">(</span><span class="tk-ident">path</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">catalog</span> <span class="tk-op">=</span> <span class="tk-op">{</span> <span class="tk-ident">version</span><span class="tk-op">:</span> <span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-ident">tables</span><span class="tk-op">:</span> <span class="tk-op">[</span><span class="tk-op">]</span> <span class="tk-op">}</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">catalogPages</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">freePages</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">hasData</span> <span class="tk-op">=</span> <span class="tk-kw">false</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">opened</span> <span class="tk-op">=</span> <span class="tk-kw">false</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** Open the file, replay the journal if needed, and read the catalog. */</span>
+  <span class="tk-fn">ensureOpen</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">opened</span><span class="tk-op">)</span> <span class="tk-kw">return</span><span class="tk-op">;</span>
+
+    <span class="tk-com">// Did we crash mid-commit last time? Replay the journal before opening.</span>
+    <span class="tk-fn">recoverJournal</span><span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">path</span><span class="tk-op">,</span> <span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-fn">open</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-ident">pageCount</span> <span class="tk-op">&gt;</span> <span class="tk-num">0</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">header</span> <span class="tk-op">=</span> <span class="tk-fn">parseHeaderPage</span><span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-fn">readPage</span><span class="tk-op">(</span><span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">header</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">catalogPages</span> <span class="tk-op">=</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">readChain</span><span class="tk-op">(</span><span class="tk-ident">header</span><span class="tk-op">.</span><span class="tk-ident">catalogRoot</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-kw">const</span> <span class="tk-ident">chunks</span> <span class="tk-op">=</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">catalogPages</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-fn">readDataChunk</span><span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-fn">readPage</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-kw">const</span> <span class="tk-ident">payload</span> <span class="tk-op">=</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-fn">concat</span><span class="tk-op">(</span><span class="tk-ident">chunks</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">toString</span><span class="tk-op">(</span><span class="tk-str">&quot;utf8&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">catalog</span> <span class="tk-op">=</span> <span class="tk-ident">JSON</span><span class="tk-op">.</span><span class="tk-fn">parse</span><span class="tk-op">(</span><span class="tk-ident">payload</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">hasData</span> <span class="tk-op">=</span> <span class="tk-kw">true</span><span class="tk-op">;</span>
+        <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">freePages</span> <span class="tk-op">=</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">computeFreePages</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+    <span class="tk-op">}</span>
+
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">opened</span> <span class="tk-op">=</span> <span class="tk-kw">true</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** Read a chain of pages by following next pointers. */</span>
+  <span class="tk-fn">readChain</span><span class="tk-op">(</span><span class="tk-ident">rootPage</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">pages</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">seen</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-type">Set</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">let</span> <span class="tk-ident">pageNumber</span> <span class="tk-op">=</span> <span class="tk-ident">rootPage</span><span class="tk-op">;</span>
+    <span class="tk-kw">while</span> <span class="tk-op">(</span><span class="tk-ident">pageNumber</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">seen</span><span class="tk-op">.</span><span class="tk-fn">has</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-type">Error</span><span class="tk-op">(</span><span class="tk-str">&quot;Corrupt page chain (cycle detected)&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-ident">seen</span><span class="tk-op">.</span><span class="tk-fn">add</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-ident">pages</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-ident">pageNumber</span> <span class="tk-op">=</span> <span class="tk-fn">pageNext</span><span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-fn">readPage</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">return</span> <span class="tk-ident">pages</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** All pages minus header, catalog, and heap are the free pages. */</span>
+  <span class="tk-fn">computeFreePages</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">used</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-type">Set</span><span class="tk-op">(</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">catalogPages</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">table</span> <span class="tk-kw">of</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">catalog</span><span class="tk-op">.</span><span class="tk-ident">tables</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">pageNumber</span> <span class="tk-kw">of</span> <span class="tk-ident">table</span><span class="tk-op">.</span><span class="tk-ident">pages</span><span class="tk-op">)</span> <span class="tk-ident">used</span><span class="tk-op">.</span><span class="tk-fn">add</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">free</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">let</span> <span class="tk-ident">pageNumber</span> <span class="tk-op">=</span> <span class="tk-num">1</span><span class="tk-op">;</span> <span class="tk-ident">pageNumber</span> <span class="tk-op">&lt;</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-ident">pageCount</span><span class="tk-op">;</span> <span class="tk-ident">pageNumber</span><span class="tk-op">+</span><span class="tk-op">+</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">used</span><span class="tk-op">.</span><span class="tk-fn">has</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-ident">free</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">return</span> <span class="tk-ident">free</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** Read all rows of a table. */</span>
+  <span class="tk-fn">readRows</span><span class="tk-op">(</span><span class="tk-ident">rootPage</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">rows</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+    <span class="tk-kw">let</span> <span class="tk-ident">pageNumber</span> <span class="tk-op">=</span> <span class="tk-ident">rootPage</span><span class="tk-op">;</span>
+    <span class="tk-kw">while</span> <span class="tk-op">(</span><span class="tk-ident">pageNumber</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">page</span> <span class="tk-op">=</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-fn">readPage</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">cell</span> <span class="tk-kw">of</span> <span class="tk-fn">heapCells</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-ident">rows</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-ident">JSON</span><span class="tk-op">.</span><span class="tk-fn">parse</span><span class="tk-op">(</span><span class="tk-ident">cell</span><span class="tk-op">.</span><span class="tk-fn">toString</span><span class="tk-op">(</span><span class="tk-str">&quot;utf8&quot;</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+      <span class="tk-ident">pageNumber</span> <span class="tk-op">=</span> <span class="tk-fn">pageNext</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">return</span> <span class="tk-ident">rows</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/**
+   * Read the whole database. Returns null for a new file.
+   * @returns {{version:number, tables:object[]}|null}
+   */</span>
+  <span class="tk-fn">load</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">ensureOpen</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">hasData</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-op">{</span>
+      <span class="tk-ident">version</span><span class="tk-op">:</span> <span class="tk-num">1</span><span class="tk-op">,</span>
+      <span class="tk-ident">tables</span><span class="tk-op">:</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">catalog</span><span class="tk-op">.</span><span class="tk-ident">tables</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">entry</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">(</span><span class="tk-op">{</span>
+        <span class="tk-ident">schema</span><span class="tk-op">:</span> <span class="tk-ident">entry</span><span class="tk-op">.</span><span class="tk-ident">schema</span><span class="tk-op">,</span>
+        <span class="tk-ident">nextRowid</span><span class="tk-op">:</span> <span class="tk-ident">entry</span><span class="tk-op">.</span><span class="tk-ident">nextRowid</span><span class="tk-op">,</span>
+        <span class="tk-ident">rows</span><span class="tk-op">:</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">readRows</span><span class="tk-op">(</span><span class="tk-ident">entry</span><span class="tk-op">.</span><span class="tk-ident">rootPage</span><span class="tk-op">)</span><span class="tk-op">,</span>
+      <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">,</span>
+    <span class="tk-op">}</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/**
+   * Write the entire snapshot to the file.
+   *
+   * The teaching version rewrites the pages of every table on each commit:
+   * simple and hard to get wrong, at the cost of being slow with large data. A real database only rewrites touched pages.
+   */</span>
+  <span class="tk-fn">save</span><span class="tk-op">(</span><span class="tk-ident">snapshot</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">ensureOpen</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+    <span class="tk-com">// Reserve page 0 for the header.</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-ident">pageCount</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">)</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-ident">pageCount</span> <span class="tk-op">=</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+
+    <span class="tk-kw">const</span> <span class="tk-ident">oldPages</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-type">Set</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">table</span> <span class="tk-kw">of</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">catalog</span><span class="tk-op">.</span><span class="tk-ident">tables</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">pageNumber</span> <span class="tk-kw">of</span> <span class="tk-ident">table</span><span class="tk-op">.</span><span class="tk-ident">pages</span><span class="tk-op">)</span> <span class="tk-ident">oldPages</span><span class="tk-op">.</span><span class="tk-fn">add</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">pageNumber</span> <span class="tk-kw">of</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">catalogPages</span><span class="tk-op">)</span> <span class="tk-ident">oldPages</span><span class="tk-op">.</span><span class="tk-fn">add</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+    <span class="tk-kw">const</span> <span class="tk-ident">freePool</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-type">Set</span><span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">freePages</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">reused</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-type">Set</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">allocate</span> <span class="tk-op">=</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">freePool</span><span class="tk-op">.</span><span class="tk-ident">size</span> <span class="tk-op">&gt;</span> <span class="tk-num">0</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-kw">const</span> <span class="tk-ident">pageNumber</span> <span class="tk-op">=</span> <span class="tk-ident">freePool</span><span class="tk-op">.</span><span class="tk-fn">values</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">next</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">value</span><span class="tk-op">;</span>
+        <span class="tk-ident">freePool</span><span class="tk-op">.</span><span class="tk-kw">delete</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-ident">reused</span><span class="tk-op">.</span><span class="tk-fn">add</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-kw">return</span> <span class="tk-ident">pageNumber</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+      <span class="tk-kw">return</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-fn">allocatePage</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span><span class="tk-op">;</span>
+
+    <span class="tk-com">// 1. Write each table as a chain of heap pages</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">tables</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">table</span> <span class="tk-kw">of</span> <span class="tk-ident">snapshot</span><span class="tk-op">.</span><span class="tk-ident">tables</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">pages</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+      <span class="tk-kw">let</span> <span class="tk-ident">current</span> <span class="tk-op">=</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+      <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">row</span> <span class="tk-kw">of</span> <span class="tk-ident">table</span><span class="tk-op">.</span><span class="tk-ident">rows</span> <span class="tk-op">?</span><span class="tk-op">?</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-kw">const</span> <span class="tk-ident">cell</span> <span class="tk-op">=</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-kw">from</span><span class="tk-op">(</span><span class="tk-ident">JSON</span><span class="tk-op">.</span><span class="tk-fn">stringify</span><span class="tk-op">(</span><span class="tk-ident">row</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">&quot;utf8&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">current</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-op">!</span><span class="tk-fn">appendHeapCell</span><span class="tk-op">(</span><span class="tk-ident">current</span><span class="tk-op">,</span> <span class="tk-ident">cell</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+          <span class="tk-ident">current</span> <span class="tk-op">=</span> <span class="tk-fn">createHeapPage</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+          <span class="tk-ident">pages</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-ident">current</span><span class="tk-op">)</span><span class="tk-op">;</span>
+          <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-fn">appendHeapCell</span><span class="tk-op">(</span><span class="tk-ident">current</span><span class="tk-op">,</span> <span class="tk-ident">cell</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+            <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-type">Error</span><span class="tk-op">(</span><span class="tk-str">&quot;A single row is too large to fit in one page&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+          <span class="tk-op">}</span>
+        <span class="tk-op">}</span>
+      <span class="tk-op">}</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">pages</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">)</span> <span class="tk-ident">pages</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-fn">createHeapPage</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+      <span class="tk-kw">const</span> <span class="tk-ident">pageNumbers</span> <span class="tk-op">=</span> <span class="tk-ident">pages</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-fn">allocate</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-ident">pages</span><span class="tk-op">.</span><span class="tk-fn">forEach</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">,</span> <span class="tk-ident">index</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+        <span class="tk-fn">setPageNext</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">,</span> <span class="tk-ident">index</span> <span class="tk-op">+</span> <span class="tk-num">1</span> <span class="tk-op">&lt;</span> <span class="tk-ident">pages</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">?</span> <span class="tk-ident">pageNumbers</span><span class="tk-op">[</span><span class="tk-ident">index</span> <span class="tk-op">+</span> <span class="tk-num">1</span><span class="tk-op">]</span> <span class="tk-op">:</span> <span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-fn">writePage</span><span class="tk-op">(</span><span class="tk-ident">pageNumbers</span><span class="tk-op">[</span><span class="tk-ident">index</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-ident">page</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+      <span class="tk-ident">tables</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-op">{</span>
+        <span class="tk-ident">name</span><span class="tk-op">:</span> <span class="tk-ident">table</span><span class="tk-op">.</span><span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">,</span>
+        <span class="tk-ident">schema</span><span class="tk-op">:</span> <span class="tk-ident">table</span><span class="tk-op">.</span><span class="tk-ident">schema</span><span class="tk-op">,</span>
+        <span class="tk-ident">rootPage</span><span class="tk-op">:</span> <span class="tk-ident">pageNumbers</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">,</span>
+        <span class="tk-ident">pages</span><span class="tk-op">:</span> <span class="tk-ident">pageNumbers</span><span class="tk-op">,</span>
+        <span class="tk-ident">nextRowid</span><span class="tk-op">:</span> <span class="tk-ident">table</span><span class="tk-op">.</span><span class="tk-ident">nextRowid</span><span class="tk-op">,</span>
+        <span class="tk-ident">rowCount</span><span class="tk-op">:</span> <span class="tk-op">(</span><span class="tk-ident">table</span><span class="tk-op">.</span><span class="tk-ident">rows</span> <span class="tk-op">?</span><span class="tk-op">?</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">,</span>
+      <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+
+    <span class="tk-com">// 2. Write the catalog JSON as a (possibly multi-page) page chain</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">catalogPayload</span> <span class="tk-op">=</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-kw">from</span><span class="tk-op">(</span><span class="tk-ident">JSON</span><span class="tk-op">.</span><span class="tk-fn">stringify</span><span class="tk-op">(</span><span class="tk-op">{</span> <span class="tk-ident">version</span><span class="tk-op">:</span> <span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-ident">tables</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">&quot;utf8&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">chunks</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">chunkSize</span> <span class="tk-op">=</span> <span class="tk-ident">PAGE_SIZE</span> <span class="tk-op">-</span> <span class="tk-ident">PAGE_HEADER_SIZE</span><span class="tk-op">;</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">let</span> <span class="tk-ident">offset</span> <span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">;</span> <span class="tk-ident">offset</span> <span class="tk-op">&lt;</span> <span class="tk-ident">catalogPayload</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">;</span> <span class="tk-ident">offset</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-ident">chunkSize</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-ident">chunks</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-ident">catalogPayload</span><span class="tk-op">.</span><span class="tk-fn">subarray</span><span class="tk-op">(</span><span class="tk-ident">offset</span><span class="tk-op">,</span> <span class="tk-ident">offset</span> <span class="tk-op">+</span> <span class="tk-ident">chunkSize</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">chunks</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">)</span> <span class="tk-ident">chunks</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-fn">alloc</span><span class="tk-op">(</span><span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+    <span class="tk-kw">const</span> <span class="tk-ident">catalogNumbers</span> <span class="tk-op">=</span> <span class="tk-ident">chunks</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-fn">allocate</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">chunks</span><span class="tk-op">.</span><span class="tk-fn">forEach</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">chunk</span><span class="tk-op">,</span> <span class="tk-ident">index</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">page</span> <span class="tk-op">=</span> <span class="tk-fn">createDataPage</span><span class="tk-op">(</span><span class="tk-ident">PAGE_TYPE_CATALOG</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-fn">writeDataChunk</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">,</span> <span class="tk-ident">chunk</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-fn">setPageNext</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">,</span> <span class="tk-ident">index</span> <span class="tk-op">+</span> <span class="tk-num">1</span> <span class="tk-op">&lt;</span> <span class="tk-ident">chunks</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">?</span> <span class="tk-ident">catalogNumbers</span><span class="tk-op">[</span><span class="tk-ident">index</span> <span class="tk-op">+</span> <span class="tk-num">1</span><span class="tk-op">]</span> <span class="tk-op">:</span> <span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-fn">writePage</span><span class="tk-op">(</span><span class="tk-ident">catalogNumbers</span><span class="tk-op">[</span><span class="tk-ident">index</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-ident">page</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+    <span class="tk-com">// 3. Header page</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">header</span> <span class="tk-op">=</span> <span class="tk-fn">createHeaderPage</span><span class="tk-op">(</span><span class="tk-op">{</span>
+      <span class="tk-ident">pageCount</span><span class="tk-op">:</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-ident">pageCount</span><span class="tk-op">,</span>
+      <span class="tk-ident">catalogRoot</span><span class="tk-op">:</span> <span class="tk-ident">catalogNumbers</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span> <span class="tk-op">?</span><span class="tk-op">?</span> <span class="tk-num">0</span><span class="tk-op">,</span>
+      <span class="tk-ident">catalogLength</span><span class="tk-op">:</span> <span class="tk-ident">catalogPayload</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">,</span>
+      <span class="tk-ident">freeListRoot</span><span class="tk-op">:</span> <span class="tk-num">0</span><span class="tk-op">,</span>
+    <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-fn">writePage</span><span class="tk-op">(</span><span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-ident">header</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+    <span class="tk-com">// 4. Update in-memory state and the free page set</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">catalog</span> <span class="tk-op">=</span> <span class="tk-op">{</span> <span class="tk-ident">version</span><span class="tk-op">:</span> <span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-ident">tables</span> <span class="tk-op">}</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">catalogPages</span> <span class="tk-op">=</span> <span class="tk-ident">catalogNumbers</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">freePages</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-ident">freePool</span><span class="tk-op">]</span><span class="tk-op">;</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">pageNumber</span> <span class="tk-kw">of</span> <span class="tk-ident">oldPages</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">reused</span><span class="tk-op">.</span><span class="tk-fn">has</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">freePages</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">freePages</span><span class="tk-op">.</span><span class="tk-fn">sort</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">a</span><span class="tk-op">,</span> <span class="tk-ident">b</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">a</span> <span class="tk-op">-</span> <span class="tk-ident">b</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">hasData</span> <span class="tk-op">=</span> <span class="tk-kw">true</span><span class="tk-op">;</span>
+
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">commit</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/**
+   * Commit: write the journal first, then modify the database, then delete the journal.
+   * If any step fails, the next open can use the journal to return to a consistent state.
+   */</span>
+  <span class="tk-fn">commit</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-ident">dirty</span><span class="tk-op">.</span><span class="tk-ident">size</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">)</span> <span class="tk-kw">return</span><span class="tk-op">;</span>
+    <span class="tk-fn">writeJournal</span><span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">path</span><span class="tk-op">,</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-ident">dirty</span><span class="tk-op">,</span> <span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-fn">flush</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">unlinkSync</span><span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">path</span> <span class="tk-op">+</span> <span class="tk-str">&quot;.journal&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-ident">dirty</span><span class="tk-op">.</span><span class="tk-fn">clear</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-fn">close</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-fn">close</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+<span class="tk-op">}</span></code></pre></div>
+
+  <h2 id="journal">The transaction journal: a crash won't corrupt anything</h2>
+  <p>
+    The order inside <code>commit()</code> is: write the pages this transaction changes to
+    <code>xxx.journal</code> and <code>fsync</code>; write the COMMIT end marker; then modify the real
+    database file; finally delete the journal.
+  </p>
+  <p>If the machine dies during commit:</p>
+  <ul>
+    <li>the journal has no COMMIT marker → the transaction is treated as if it never happened; drop the journal and the database keeps its old state.</li>
+    <li>the journal has a COMMIT marker → replay (roll forward) every page and the data returns to a consistent state.</li>
+  </ul>
+  <p>
+    Every page carries a CRC32 checksum. This isn't only for catching corruption; it's also how we decide
+    whether a record was written completely.
+  </p>
+
+  <div class="file"><div class="file__head"><span class="file__name">src/storage/journal.js</span><span class="file__meta">JavaScript · 138 lines · step 10</span></div><pre class="code"><code><span class="tk-com">/**
+ * Journal and Crash Recovery
+ *
+ * Consider this: COMMIT must write 5 pages, but the power fails while writing page 3.
+ * The file is now half new data and half old data - the database is corrupt.
+ *
+ * The fix is &quot;write the journal first, then modify the database&quot;:
+ *
+ *   1. write the pages to change (page number + contents) to xxx.journal and fsync
+ *   2. write a COMMIT end marker and fsync
+ *   3. write the same pages into the real database file
+ *   4. delete the journal
+ *
+ * If it crashes midway:
+ *   - no COMMIT marker in the journal -&gt; treat the transaction as not having happened and discard the journal
+ *   - COMMIT marker present      -&gt; roll forward all pages to bring the data back to a consistent state
+ *
+ * Each page carries a CRC32 checksum to avoid reading corrupted data.
+ * This is the teaching version; a real database handles more details (LSN, checkpoint, WAL file management).
+ */</span>
+<span class="tk-kw">import</span> <span class="tk-ident">fs</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:fs&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-kw">const</span> <span class="tk-ident">MAGIC</span> <span class="tk-op">=</span> <span class="tk-str">&quot;JRNL1\n&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">const</span> <span class="tk-ident">END_PAGE</span> <span class="tk-op">=</span> <span class="tk-num">0xffffffff</span><span class="tk-op">;</span>
+
+<span class="tk-com">/** CRC32 lookup table. */</span>
+<span class="tk-kw">const</span> <span class="tk-ident">CRC_TABLE</span> <span class="tk-op">=</span> <span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">table</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-type">Uint32Array</span><span class="tk-op">(</span><span class="tk-num">256</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">let</span> <span class="tk-ident">i</span> <span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">;</span> <span class="tk-ident">i</span> <span class="tk-op">&lt;</span> <span class="tk-num">256</span><span class="tk-op">;</span> <span class="tk-ident">i</span><span class="tk-op">+</span><span class="tk-op">+</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">let</span> <span class="tk-ident">value</span> <span class="tk-op">=</span> <span class="tk-ident">i</span><span class="tk-op">;</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">let</span> <span class="tk-ident">bit</span> <span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">;</span> <span class="tk-ident">bit</span> <span class="tk-op">&lt;</span> <span class="tk-num">8</span><span class="tk-op">;</span> <span class="tk-ident">bit</span><span class="tk-op">+</span><span class="tk-op">+</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-ident">value</span> <span class="tk-op">=</span> <span class="tk-ident">value</span> <span class="tk-op">&amp;</span> <span class="tk-num">1</span> <span class="tk-op">?</span> <span class="tk-num">0xedb88320</span> <span class="tk-op">^</span> <span class="tk-op">(</span><span class="tk-ident">value</span> <span class="tk-op">&gt;</span><span class="tk-op">&gt;</span><span class="tk-op">&gt;</span> <span class="tk-num">1</span><span class="tk-op">)</span> <span class="tk-op">:</span> <span class="tk-ident">value</span> <span class="tk-op">&gt;</span><span class="tk-op">&gt;</span><span class="tk-op">&gt;</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-ident">table</span><span class="tk-op">[</span><span class="tk-ident">i</span><span class="tk-op">]</span> <span class="tk-op">=</span> <span class="tk-ident">value</span> <span class="tk-op">&gt;</span><span class="tk-op">&gt;</span><span class="tk-op">&gt;</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">table</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">crc32</span><span class="tk-op">(</span><span class="tk-ident">buffer</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">let</span> <span class="tk-ident">crc</span> <span class="tk-op">=</span> <span class="tk-num">0xffffffff</span><span class="tk-op">;</span>
+  <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">byte</span> <span class="tk-kw">of</span> <span class="tk-ident">buffer</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-ident">crc</span> <span class="tk-op">=</span> <span class="tk-ident">CRC_TABLE</span><span class="tk-op">[</span><span class="tk-op">(</span><span class="tk-ident">crc</span> <span class="tk-op">^</span> <span class="tk-ident">byte</span><span class="tk-op">)</span> <span class="tk-op">&amp;</span> <span class="tk-num">0xff</span><span class="tk-op">]</span> <span class="tk-op">^</span> <span class="tk-op">(</span><span class="tk-ident">crc</span> <span class="tk-op">&gt;</span><span class="tk-op">&gt;</span><span class="tk-op">&gt;</span> <span class="tk-num">8</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">return</span> <span class="tk-op">(</span><span class="tk-ident">crc</span> <span class="tk-op">^</span> <span class="tk-num">0xffffffff</span><span class="tk-op">)</span> <span class="tk-op">&gt;</span><span class="tk-op">&gt;</span><span class="tk-op">&gt;</span> <span class="tk-num">0</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Get the journal path for a database file. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">journalPath</span><span class="tk-op">(</span><span class="tk-ident">dbPath</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">dbPath</span> <span class="tk-op">+</span> <span class="tk-str">&quot;.journal&quot;</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/**
+ * Write dirty pages to the journal file.
+ * @param {string} dbPath
+ * @param {Map&lt;number, Buffer&gt;} pages page number -&gt; page contents
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">writeJournal</span><span class="tk-op">(</span><span class="tk-ident">dbPath</span><span class="tk-op">,</span> <span class="tk-ident">pages</span><span class="tk-op">,</span> <span class="tk-ident">pageSize</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">records</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+  <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-op">[</span><span class="tk-ident">pageNumber</span><span class="tk-op">,</span> <span class="tk-ident">buffer</span><span class="tk-op">]</span> <span class="tk-kw">of</span> <span class="tk-ident">pages</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">buffer</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">pageSize</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-type">Error</span><span class="tk-op">(</span><span class="tk-str">&quot;Incorrect page size: &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">pageNumber</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">header</span> <span class="tk-op">=</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-fn">alloc</span><span class="tk-op">(</span><span class="tk-num">12</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">header</span><span class="tk-op">.</span><span class="tk-fn">writeUInt32LE</span><span class="tk-op">(</span><span class="tk-ident">pageNumber</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">header</span><span class="tk-op">.</span><span class="tk-fn">writeUInt32LE</span><span class="tk-op">(</span><span class="tk-ident">buffer</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">,</span> <span class="tk-num">4</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">header</span><span class="tk-op">.</span><span class="tk-fn">writeUInt32LE</span><span class="tk-op">(</span><span class="tk-fn">crc32</span><span class="tk-op">(</span><span class="tk-ident">buffer</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-num">8</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">records</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-ident">header</span><span class="tk-op">,</span> <span class="tk-ident">buffer</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-kw">const</span> <span class="tk-ident">endData</span> <span class="tk-op">=</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-kw">from</span><span class="tk-op">(</span><span class="tk-str">&quot;COMMIT&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">endHeader</span> <span class="tk-op">=</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-fn">alloc</span><span class="tk-op">(</span><span class="tk-num">12</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">endHeader</span><span class="tk-op">.</span><span class="tk-fn">writeUInt32LE</span><span class="tk-op">(</span><span class="tk-ident">END_PAGE</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">endHeader</span><span class="tk-op">.</span><span class="tk-fn">writeUInt32LE</span><span class="tk-op">(</span><span class="tk-ident">endData</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">,</span> <span class="tk-num">4</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">endHeader</span><span class="tk-op">.</span><span class="tk-fn">writeUInt32LE</span><span class="tk-op">(</span><span class="tk-fn">crc32</span><span class="tk-op">(</span><span class="tk-ident">endData</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-num">8</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">const</span> <span class="tk-ident">content</span> <span class="tk-op">=</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-fn">concat</span><span class="tk-op">(</span><span class="tk-op">[</span><span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-kw">from</span><span class="tk-op">(</span><span class="tk-ident">MAGIC</span><span class="tk-op">,</span> <span class="tk-str">&quot;ascii&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-ident">records</span><span class="tk-op">,</span> <span class="tk-ident">endHeader</span><span class="tk-op">,</span> <span class="tk-ident">endData</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">file</span> <span class="tk-op">=</span> <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">openSync</span><span class="tk-op">(</span><span class="tk-fn">journalPath</span><span class="tk-op">(</span><span class="tk-ident">dbPath</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">&quot;w&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">try</span> <span class="tk-op">{</span>
+    <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">writeSync</span><span class="tk-op">(</span><span class="tk-ident">file</span><span class="tk-op">,</span> <span class="tk-ident">content</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">fsyncSync</span><span class="tk-op">(</span><span class="tk-ident">file</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span> <span class="tk-kw">finally</span> <span class="tk-op">{</span>
+    <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">closeSync</span><span class="tk-op">(</span><span class="tk-ident">file</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/**
+ * If a valid journal exists, replay its pages into the database file, then delete the journal.
+ * @returns {boolean} whether a replay happened
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">recoverJournal</span><span class="tk-op">(</span><span class="tk-ident">dbPath</span><span class="tk-op">,</span> <span class="tk-ident">pageSize</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">path</span> <span class="tk-op">=</span> <span class="tk-fn">journalPath</span><span class="tk-op">(</span><span class="tk-ident">dbPath</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">existsSync</span><span class="tk-op">(</span><span class="tk-ident">path</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">false</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">const</span> <span class="tk-ident">content</span> <span class="tk-op">=</span> <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">readFileSync</span><span class="tk-op">(</span><span class="tk-ident">path</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">content</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">&lt;</span> <span class="tk-ident">MAGIC</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">content</span><span class="tk-op">.</span><span class="tk-fn">subarray</span><span class="tk-op">(</span><span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-ident">MAGIC</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">toString</span><span class="tk-op">(</span><span class="tk-str">&quot;ascii&quot;</span><span class="tk-op">)</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">MAGIC</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">unlinkSync</span><span class="tk-op">(</span><span class="tk-ident">path</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-kw">false</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-kw">const</span> <span class="tk-ident">pages</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+  <span class="tk-kw">let</span> <span class="tk-ident">offset</span> <span class="tk-op">=</span> <span class="tk-ident">MAGIC</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">;</span>
+  <span class="tk-kw">let</span> <span class="tk-ident">committed</span> <span class="tk-op">=</span> <span class="tk-kw">false</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">while</span> <span class="tk-op">(</span><span class="tk-ident">offset</span> <span class="tk-op">+</span> <span class="tk-num">12</span> <span class="tk-op">&lt;</span><span class="tk-op">=</span> <span class="tk-ident">content</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">pageNumber</span> <span class="tk-op">=</span> <span class="tk-ident">content</span><span class="tk-op">.</span><span class="tk-fn">readUInt32LE</span><span class="tk-op">(</span><span class="tk-ident">offset</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">length</span> <span class="tk-op">=</span> <span class="tk-ident">content</span><span class="tk-op">.</span><span class="tk-fn">readUInt32LE</span><span class="tk-op">(</span><span class="tk-ident">offset</span> <span class="tk-op">+</span> <span class="tk-num">4</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">checksum</span> <span class="tk-op">=</span> <span class="tk-ident">content</span><span class="tk-op">.</span><span class="tk-fn">readUInt32LE</span><span class="tk-op">(</span><span class="tk-ident">offset</span> <span class="tk-op">+</span> <span class="tk-num">8</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">offset</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-num">12</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">pageNumber</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">END_PAGE</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">endData</span> <span class="tk-op">=</span> <span class="tk-ident">content</span><span class="tk-op">.</span><span class="tk-fn">subarray</span><span class="tk-op">(</span><span class="tk-ident">offset</span><span class="tk-op">,</span> <span class="tk-ident">offset</span> <span class="tk-op">+</span> <span class="tk-ident">length</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-ident">committed</span> <span class="tk-op">=</span> <span class="tk-ident">offset</span> <span class="tk-op">+</span> <span class="tk-ident">length</span> <span class="tk-op">&lt;</span><span class="tk-op">=</span> <span class="tk-ident">content</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">&amp;</span><span class="tk-op">&amp;</span> <span class="tk-fn">crc32</span><span class="tk-op">(</span><span class="tk-ident">endData</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">checksum</span><span class="tk-op">;</span>
+      <span class="tk-kw">break</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">offset</span> <span class="tk-op">+</span> <span class="tk-ident">length</span> <span class="tk-op">&gt;</span> <span class="tk-ident">content</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">)</span> <span class="tk-kw">break</span><span class="tk-op">;</span> <span class="tk-com">// incomplete record</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">data</span> <span class="tk-op">=</span> <span class="tk-ident">content</span><span class="tk-op">.</span><span class="tk-fn">subarray</span><span class="tk-op">(</span><span class="tk-ident">offset</span><span class="tk-op">,</span> <span class="tk-ident">offset</span> <span class="tk-op">+</span> <span class="tk-ident">length</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-fn">crc32</span><span class="tk-op">(</span><span class="tk-ident">data</span><span class="tk-op">)</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">checksum</span><span class="tk-op">)</span> <span class="tk-kw">break</span><span class="tk-op">;</span> <span class="tk-com">// corrupted contents</span>
+    <span class="tk-ident">pages</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-op">{</span> <span class="tk-ident">pageNumber</span><span class="tk-op">,</span> <span class="tk-ident">data</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">offset</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-ident">length</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">committed</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-com">// No COMMIT: the transaction never completed; discard the journal and keep the old state.</span>
+    <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">unlinkSync</span><span class="tk-op">(</span><span class="tk-ident">path</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-kw">false</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-kw">const</span> <span class="tk-ident">file</span> <span class="tk-op">=</span> <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">openSync</span><span class="tk-op">(</span><span class="tk-ident">dbPath</span><span class="tk-op">,</span> <span class="tk-str">&quot;r+&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">try</span> <span class="tk-op">{</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-op">{</span> <span class="tk-ident">pageNumber</span><span class="tk-op">,</span> <span class="tk-ident">data</span> <span class="tk-op">}</span> <span class="tk-kw">of</span> <span class="tk-ident">pages</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">writeSync</span><span class="tk-op">(</span><span class="tk-ident">file</span><span class="tk-op">,</span> <span class="tk-ident">data</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-ident">data</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">,</span> <span class="tk-ident">pageNumber</span> <span class="tk-op">*</span> <span class="tk-ident">pageSize</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">fsyncSync</span><span class="tk-op">(</span><span class="tk-ident">file</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span> <span class="tk-kw">finally</span> <span class="tk-op">{</span>
+    <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">closeSync</span><span class="tk-op">(</span><span class="tk-ident">file</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">unlinkSync</span><span class="tk-op">(</span><span class="tk-ident">path</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-kw">true</span><span class="tk-op">;</span>
+<span class="tk-op">}</span></code></pre></div>
+
+  <h2 id="transactions">Transactions: BEGIN / COMMIT / ROLLBACK</h2>
+  <p>
+    With <code>save()</code> in place, transactions are simple: <code>BEGIN</code> takes a snapshot,
+    <code>ROLLBACK</code> restores it, and only <code>COMMIT</code> actually writes to the file. Every
+    statement during a transaction changes memory only, so other statements see the changes while the file
+    hasn't changed yet.
+  </p>
+  <p>
+    This is an "optimistic" implementation: no locks, no concurrency control. That's completely sufficient
+    for a single program, but multiple processes opening the same file at once would need more machinery
+    (file locks, MVCC, WAL LSNs). That's a direction well worth exploring further.
+  </p>
+
+  <p class="diff__label">src/database.js: add transactions and autocommit</p><div class="diff"><pre class="code code--diff"><code><span class="d-ctx">  /**</span>
+<span class="d-ctx">   * Database: the facade of the whole engine</span>
+<span class="d-ctx">   *</span>
+<span class="d-ctx">   * It keeps track of &quot;which tables exist&quot; and is responsible for:</span>
+<span class="d-ctx">   *   - creating / dropping tables</span>
+<span class="d-ctx">   *   - loading from the storage backend and writing snapshots back to it</span>
+<span class="d-ctx">   *   - later (chapter 6) providing exec() to run SQL</span>
+<span class="d-ctx">   *</span>
+<span class="d-ctx">   * All database state lives in memory: it is read from store.load() on open, and after writes</span>
+<span class="d-ctx">   * store.save() is called to persist it. This is a teaching simplification, but the interface matches a real database</span>
+<span class="d-ctx">   * exactly: the storage layer is replaceable (MemoryStore / DiskStore).</span>
+<span class="d-ctx">   */</span>
+<span class="d-ctx">  import { MemoryStore } from &quot;./storage/memory.js&quot;;</span>
+<span class="d-ctx">  import { parseScript } from &quot;./parser.js&quot;;</span>
+<span class="d-ctx">  import { execute } from &quot;./engine/executor.js&quot;;</span>
+<span class="d-ctx">  import { Table } from &quot;./table.js&quot;;</span>
+<span class="d-ctx">  import { SqlError } from &quot;./errors.js&quot;;</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  /** Create a simple command result object. */</span>
+<span class="d-ctx">  function command(message) {</span>
+<span class="d-ctx">    return { type: &quot;command&quot;, message, changes: 0, lastInsertRowid: null };</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  /** Version of the current snapshot format; lets us detect format changes later. */</span>
+<span class="d-ctx">  export const SNAPSHOT_VERSION = 1;</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  export class Database {</span>
+<span class="d-ctx">    /**</span>
+<span class="d-ctx">     * @param {{store?: {load:Function, save:Function, close?:Function}}} [options]</span>
+<span class="d-ctx">     */</span>
+<span class="d-ctx">    constructor(options = {}) {</span>
+<span class="d-ctx">      this.store = options.store ?? new MemoryStore();</span>
+<span class="d-ctx">      /** @type {Map&lt;string, Table&gt;} key is the lowercase table name */</span>
+<span class="d-ctx">      this.tables = new Map();</span>
+<span class="d-ctx">      this.closed = false;</span>
+<span class="d-ctx">      this.inTransaction = false;</span>
+<span class="d-ctx">      this.transactionBackup = null;</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    /**</span>
+<span class="d-ctx">     * Open a database: create a Database and load existing data from the store.</span>
+<span class="d-ctx">     * @param {{load:Function, save:Function, close?:Function}} [store]</span>
+<span class="d-ctx">     */</span>
+<span class="d-ctx">    static open(store = new MemoryStore()) {</span>
+<span class="d-ctx">      const db = new Database({ store });</span>
+<span class="d-ctx">      const snapshot = store.load();</span>
+<span class="d-ctx">      if (snapshot) db.loadSnapshot(snapshot);</span>
+<span class="d-ctx">      return db;</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    /** Find a table by name (case-insensitive); returns undefined if not found. */</span>
+<span class="d-ctx">    findTable(name) {</span>
+<span class="d-ctx">      return this.tables.get(String(name).toLowerCase());</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    /** Find a table by name; throws if not found. */</span>
+<span class="d-ctx">    getTable(name) {</span>
+<span class="d-ctx">      const table = this.findTable(name);</span>
+<span class="d-ctx">      if (!table) {</span>
+<span class="d-ctx">        throw new SqlError(&quot;Table does not exist: &quot; + name, {</span>
+<span class="d-ctx">          code: &quot;SCHEMA_ERROR&quot;,</span>
+<span class="d-ctx">          hint: this.listTables().length &gt; 0 ? &quot;Existing tables: &quot; + this.listTables().join(&quot;, &quot;) : &quot;There are no tables yet&quot;,</span>
+<span class="d-ctx">        });</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      return table;</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    hasTable(name) {</span>
+<span class="d-ctx">      return this.tables.has(String(name).toLowerCase());</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    listTables() {</span>
+<span class="d-ctx">      return [...this.tables.values()].map((table) =&gt; table.name);</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    /** Create a table (the schema is produced by schema.js). */</span>
+<span class="d-ctx">    createTable(schema) {</span>
+<span class="d-ctx">      if (this.hasTable(schema.name)) {</span>
+<span class="d-ctx">        throw new SqlError(&quot;Table already exists: &quot; + schema.name, { code: &quot;SCHEMA_ERROR&quot; });</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      const table = new Table(schema);</span>
+<span class="d-ctx">      this.tables.set(schema.name.toLowerCase(), table);</span>
+<span class="d-ctx">      return table;</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    /** Drop a table; returns whether anything was actually dropped. */</span>
+<span class="d-ctx">    dropTable(name) {</span>
+<span class="d-ctx">      return this.tables.delete(String(name).toLowerCase());</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    /** Export a snapshot of the whole database (plain data, JSON-serializable). */</span>
+<span class="d-ctx">    snapshot() {</span>
+<span class="d-ctx">      return {</span>
+<span class="d-ctx">        version: SNAPSHOT_VERSION,</span>
+<span class="d-ctx">        tables: [...this.tables.values()].map((table) =&gt; table.toJSON()),</span>
+<span class="d-ctx">      };</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    /** Restore the whole database from a snapshot. */</span>
+<span class="d-ctx">    loadSnapshot(snapshot) {</span>
+<span class="d-ctx">      if (!snapshot || !Array.isArray(snapshot.tables)) {</span>
+<span class="d-ctx">        throw new SqlError(&quot;Invalid database file format&quot;, { code: &quot;STORAGE_ERROR&quot; });</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      this.tables.clear();</span>
+<span class="d-ctx">      for (const data of snapshot.tables) {</span>
+<span class="d-ctx">        const table = new Table(data.schema, { rows: data.rows, nextRowid: data.nextRowid });</span>
+<span class="d-ctx">        this.tables.set(table.name.toLowerCase(), table);</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    /** Write the current state back to the storage backend. */</span>
+<span class="d-ctx">    save() {</span>
+<span class="d-ctx">      this.store.save(this.snapshot());</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    /**</span>
+<span class="d-ctx">     * Execute a SQL string (possibly multiple statements) and return an array of results.</span>
+<span class="d-ctx">     * @param {string} sql</span>
+<span class="d-ctx">     * @returns {object[]}</span>
+<span class="d-ctx">     */</span>
+<span class="d-ctx">    exec(sql) {</span>
+<span class="d-ctx">      const statements = parseScript(sql);</span>
+<span class="d-ctx">      const results = [];</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">      for (const ast of statements) {</span>
+<span class="d-ctx">        // Transaction control statements are handled by Database itself, not the executor.</span>
+<span class="d-ctx">        if (ast.type === &quot;begin&quot;) {</span>
+<span class="d-ctx">          if (this.inTransaction) {</span>
+<span class="d-ctx">            throw new SqlError(&quot;Already in a transaction; cannot BEGIN again&quot;, { code: &quot;TRANSACTION_ERROR&quot; });</span>
+<span class="d-ctx">          }</span>
+<span class="d-ctx">          this.inTransaction = true;</span>
+<span class="d-ctx">          this.transactionBackup = this.snapshot();</span>
+<span class="d-ctx">          results.push(command(&quot;transaction started&quot;));</span>
+<span class="d-ctx">          continue;</span>
+<span class="d-ctx">        }</span>
+<span class="d-ctx">        if (ast.type === &quot;commit&quot;) {</span>
+<span class="d-ctx">          if (!this.inTransaction) {</span>
+<span class="d-ctx">            throw new SqlError(&quot;No transaction in progress to COMMIT&quot;, { code: &quot;TRANSACTION_ERROR&quot; });</span>
+<span class="d-ctx">          }</span>
+<span class="d-ctx">          this.save();</span>
+<span class="d-ctx">          this.inTransaction = false;</span>
+<span class="d-ctx">          this.transactionBackup = null;</span>
+<span class="d-ctx">          results.push(command(&quot;transaction committed&quot;));</span>
+<span class="d-ctx">          continue;</span>
+<span class="d-ctx">        }</span>
+<span class="d-ctx">        if (ast.type === &quot;rollback&quot;) {</span>
+<span class="d-ctx">          if (!this.inTransaction) {</span>
+<span class="d-ctx">            throw new SqlError(&quot;No transaction in progress to ROLLBACK&quot;, { code: &quot;TRANSACTION_ERROR&quot; });</span>
+<span class="d-ctx">          }</span>
+<span class="d-ctx">          this.loadSnapshot(this.transactionBackup);</span>
+<span class="d-ctx">          this.inTransaction = false;</span>
+<span class="d-ctx">          this.transactionBackup = null;</span>
+<span class="d-ctx">          results.push(command(&quot;transaction rolled back&quot;));</span>
+<span class="d-ctx">          continue;</span>
+<span class="d-ctx">        }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">        // Each statement is all-or-nothing: take a snapshot first, restore it on failure.</span>
+<span class="d-ctx">        const before = this.snapshot();</span>
+<span class="d-ctx">        try {</span>
+<span class="d-ctx">          results.push(execute(this, ast));</span>
+<span class="d-ctx">          // Autocommit: not every store needs it (the in-memory one does not).</span>
+<span class="d-ctx">          if (!this.inTransaction &amp;&amp; this.store.persistent) this.save();</span>
+<span class="d-ctx">        } catch (error) {</span>
+<span class="d-ctx">          this.loadSnapshot(before);</span>
+<span class="d-ctx">          throw error;</span>
+<span class="d-ctx">        }</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      return results;</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    /**</span>
+<span class="d-ctx">     * Execute a single statement and return the first result (handy for tests and small tools).</span>
+<span class="d-ctx">     * @param {string} sql</span>
+<span class="d-ctx">     */</span>
+<span class="d-ctx">    query(sql) {</span>
+<span class="d-ctx">      return this.exec(sql)[0];</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    /** Close the database: save first, then close the store. Uncommitted transactions are discarded. */</span>
+<span class="d-ctx">    close() {</span>
+<span class="d-ctx">      if (this.closed) return;</span>
+<span class="d-ctx">      if (this.inTransaction) {</span>
+<span class="d-ctx">        // Transactions without COMMIT are discarded (ROLLBACK semantics).</span>
+<span class="d-ctx">        this.loadSnapshot(this.transactionBackup);</span>
+<span class="d-ctx">        this.inTransaction = false;</span>
+<span class="d-ctx">        this.transactionBackup = null;</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      this.save();</span>
+<span class="d-ctx">      this.store.close?.();</span>
+<span class="d-ctx">      this.closed = true;</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+</code></pre></div>
+
+  <h2 id="node">The Node.js entry point: openDatabase()</h2>
+  <p>
+    Finally, wire <code>DiskStore</code> into the public API. <code>src/index.js</code> deliberately stays
+    pure core; anything file-system related lives in <code>src/node.js</code>. That's what lets the
+    tutorial site's playground bundle the core version straight into the browser.
+  </p>
+
+  <div class="file"><div class="file__head"><span class="file__name">src/node.js</span><span class="file__meta">JavaScript · 19 lines · step 10</span></div><pre class="code"><code><span class="tk-com">/**
+ * Node.js-only entry point: filesystem-dependent features live here.
+ *
+ * The core (src/index.js) deliberately avoids the filesystem, so the same code can be bundled
+ * and run in the browser (the playground on the tutorial site uses the core build).
+ */</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">Database</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;./database.js&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">DiskStore</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;./storage/disk.js&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-kw">export</span> <span class="tk-op">{</span> <span class="tk-ident">Database</span><span class="tk-op">,</span> <span class="tk-ident">DiskStore</span> <span class="tk-op">}</span><span class="tk-op">;</span>
+<span class="tk-kw">export</span> <span class="tk-op">{</span> <span class="tk-ident">MemoryStore</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;./storage/memory.js&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-com">/**
+ * Open (or create) a database stored on disk.
+ * @param {string} path e.g. demo.db
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">openDatabase</span><span class="tk-op">(</span><span class="tk-ident">path</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">Database</span><span class="tk-op">.</span><span class="tk-fn">open</span><span class="tk-op">(</span><span class="tk-kw">new</span> <span class="tk-fn">DiskStore</span><span class="tk-op">(</span><span class="tk-ident">path</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span></code></pre></div>
+
+  <p>The CLI can now open files directly:</p>
+  <pre class="code"><code>node bin/sql.js demo.db</code></pre>
+  <p>
+    Once in the REPL, every statement auto-commits, and it saves once more on exit. You can also switch
+    databases with <code>.open other.db</code>.
+  </p>
+
+  <h2 id="crash-test">Verification: simulating a power loss</h2>
+  <p>The test does this:</p>
+  <ol>
+    <li>Create a database, write data, and close it.</li>
+    <li>Write a journal by hand, then truncate it, simulating "the journal was only half written".</li>
+    <li>Reopen the database and confirm the journal was discarded and the database is unchanged.</li>
+    <li>Write a complete journal, reopen, and confirm the pages are replayed.</li>
+  </ol>
+
+  <div class="file"><div class="file__head"><span class="file__name">tests/disk.test.js</span><span class="file__meta">JavaScript · 136 lines · step 10</span></div><pre class="code"><code><span class="tk-kw">import</span> <span class="tk-ident">test</span><span class="tk-op">,</span> <span class="tk-op">{</span> <span class="tk-ident">after</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:test&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-ident">assert</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:assert/strict&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-ident">fs</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:fs&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-ident">os</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:os&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-ident">path</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:path&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">openDatabase</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;../src/node.js&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">Pager</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;../src/storage/disk.js&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span>
+  <span class="tk-ident">PAGE_SIZE</span><span class="tk-op">,</span> <span class="tk-ident">appendHeapCell</span><span class="tk-op">,</span> <span class="tk-ident">createHeaderPage</span><span class="tk-op">,</span> <span class="tk-ident">createHeapPage</span><span class="tk-op">,</span> <span class="tk-ident">heapCells</span><span class="tk-op">,</span>
+  <span class="tk-ident">heapFreeBytes</span><span class="tk-op">,</span> <span class="tk-ident">parseHeaderPage</span><span class="tk-op">,</span> <span class="tk-ident">setPageNext</span><span class="tk-op">,</span>
+<span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;../src/storage/page.js&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">crc32</span><span class="tk-op">,</span> <span class="tk-ident">journalPath</span><span class="tk-op">,</span> <span class="tk-ident">recoverJournal</span><span class="tk-op">,</span> <span class="tk-ident">writeJournal</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;../src/storage/journal.js&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-kw">const</span> <span class="tk-ident">dir</span> <span class="tk-op">=</span> <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">mkdtempSync</span><span class="tk-op">(</span><span class="tk-ident">path</span><span class="tk-op">.</span><span class="tk-fn">join</span><span class="tk-op">(</span><span class="tk-ident">os</span><span class="tk-op">.</span><span class="tk-fn">tmpdir</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">&quot;sql-from-scratch-&quot;</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-fn">after</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">rmSync</span><span class="tk-op">(</span><span class="tk-ident">dir</span><span class="tk-op">,</span> <span class="tk-op">{</span> <span class="tk-ident">recursive</span><span class="tk-op">:</span> <span class="tk-kw">true</span><span class="tk-op">,</span> <span class="tk-ident">force</span><span class="tk-op">:</span> <span class="tk-kw">true</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-kw">const</span> <span class="tk-ident">file</span> <span class="tk-op">=</span> <span class="tk-op">(</span><span class="tk-ident">name</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">path</span><span class="tk-op">.</span><span class="tk-fn">join</span><span class="tk-op">(</span><span class="tk-ident">dir</span><span class="tk-op">,</span> <span class="tk-ident">name</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;heap page: writing and reading cells&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">page</span> <span class="tk-op">=</span> <span class="tk-fn">createHeapPage</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">heapCells</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">ok</span><span class="tk-op">(</span><span class="tk-fn">appendHeapCell</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">,</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-kw">from</span><span class="tk-op">(</span><span class="tk-str">&quot;hello&quot;</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">ok</span><span class="tk-op">(</span><span class="tk-fn">appendHeapCell</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">,</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-kw">from</span><span class="tk-op">(</span><span class="tk-str">&quot;world&quot;</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-fn">heapCells</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">cell</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">cell</span><span class="tk-op">.</span><span class="tk-fn">toString</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;hello&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;world&quot;</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">ok</span><span class="tk-op">(</span><span class="tk-fn">heapFreeBytes</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">)</span> <span class="tk-op">&lt;</span> <span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;header page: write then parse&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">header</span> <span class="tk-op">=</span> <span class="tk-fn">createHeaderPage</span><span class="tk-op">(</span><span class="tk-op">{</span> <span class="tk-ident">pageCount</span><span class="tk-op">:</span> <span class="tk-num">7</span><span class="tk-op">,</span> <span class="tk-ident">catalogRoot</span><span class="tk-op">:</span> <span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-ident">catalogLength</span><span class="tk-op">:</span> <span class="tk-num">100</span><span class="tk-op">,</span> <span class="tk-ident">freeListRoot</span><span class="tk-op">:</span> <span class="tk-num">0</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">parsed</span> <span class="tk-op">=</span> <span class="tk-fn">parseHeaderPage</span><span class="tk-op">(</span><span class="tk-ident">header</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">parsed</span><span class="tk-op">.</span><span class="tk-ident">pageCount</span><span class="tk-op">,</span> <span class="tk-num">7</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">parsed</span><span class="tk-op">.</span><span class="tk-ident">catalogRoot</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">parseHeaderPage</span><span class="tk-op">(</span><span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-fn">alloc</span><span class="tk-op">(</span><span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;Pager: write pages, flush, and another Pager can read them&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">filePath</span> <span class="tk-op">=</span> <span class="tk-fn">file</span><span class="tk-op">(</span><span class="tk-str">&quot;pager.db&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">pager</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-fn">Pager</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-fn">open</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">page</span> <span class="tk-op">=</span> <span class="tk-fn">createHeapPage</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-fn">appendHeapCell</span><span class="tk-op">(</span><span class="tk-ident">page</span><span class="tk-op">,</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-kw">from</span><span class="tk-op">(</span><span class="tk-str">&quot;x&quot;</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-fn">writePage</span><span class="tk-op">(</span><span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-ident">page</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-fn">flush</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">pager</span><span class="tk-op">.</span><span class="tk-fn">close</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">const</span> <span class="tk-ident">reader</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-fn">Pager</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">reader</span><span class="tk-op">.</span><span class="tk-fn">open</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-fn">heapCells</span><span class="tk-op">(</span><span class="tk-ident">reader</span><span class="tk-op">.</span><span class="tk-fn">readPage</span><span class="tk-op">(</span><span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">cell</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">cell</span><span class="tk-op">.</span><span class="tk-fn">toString</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;x&quot;</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">reader</span><span class="tk-op">.</span><span class="tk-fn">close</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;DiskStore: tables and data persist across processes&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">filePath</span> <span class="tk-op">=</span> <span class="tk-fn">file</span><span class="tk-op">(</span><span class="tk-str">&quot;basic.db&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">openDatabase</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT NOT NULL, price REAL DEFAULT 0);&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;INSERT INTO books (id, title, price) VALUES (1, 'JS', 100), (2, 'DB', 200);&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">close</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">const</span> <span class="tk-ident">reopened</span> <span class="tk-op">=</span> <span class="tk-fn">openDatabase</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">reopened</span><span class="tk-op">.</span><span class="tk-fn">listTables</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;books&quot;</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">result</span> <span class="tk-op">=</span> <span class="tk-ident">reopened</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT id, title, price FROM books ORDER BY id&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-op">[</span><span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-str">&quot;JS&quot;</span><span class="tk-op">,</span> <span class="tk-num">100</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-num">2</span><span class="tk-op">,</span> <span class="tk-str">&quot;DB&quot;</span><span class="tk-op">,</span> <span class="tk-num">200</span><span class="tk-op">]</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">reopened</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT COUNT(*) FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-num">2</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">reopened</span><span class="tk-op">.</span><span class="tk-fn">close</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;DiskStore: schema constraints and defaults are saved too&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">filePath</span> <span class="tk-op">=</span> <span class="tk-fn">file</span><span class="tk-op">(</span><span class="tk-str">&quot;schema.db&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">openDatabase</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT NOT NULL DEFAULT 'x', email TEXT UNIQUE);&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;INSERT INTO t (id) VALUES (1)&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">close</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">const</span> <span class="tk-ident">reopened</span> <span class="tk-op">=</span> <span class="tk-fn">openDatabase</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">reopened</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT id, name, email FROM t&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-op">[</span><span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-str">&quot;x&quot;</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">]</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">throws</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">reopened</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;INSERT INTO t (id) VALUES (1)&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">/</span><span class="tk-ident">PRIMARY</span> <span class="tk-ident">KEY</span><span class="tk-op">/</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">reopened</span><span class="tk-op">.</span><span class="tk-fn">close</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;DiskStore: repeated saves do not grow the file without bound&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">filePath</span> <span class="tk-op">=</span> <span class="tk-fn">file</span><span class="tk-op">(</span><span class="tk-str">&quot;growth.db&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">openDatabase</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;CREATE TABLE t (id INTEGER, text TEXT);&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">let</span> <span class="tk-ident">i</span> <span class="tk-op">=</span> <span class="tk-num">0</span><span class="tk-op">;</span> <span class="tk-ident">i</span> <span class="tk-op">&lt;</span> <span class="tk-num">40</span><span class="tk-op">;</span> <span class="tk-ident">i</span><span class="tk-op">+</span><span class="tk-op">+</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;INSERT INTO t (id, text) VALUES (&quot;</span> <span class="tk-op">+</span> <span class="tk-ident">i</span> <span class="tk-op">+</span> <span class="tk-str">&quot;, '&quot;</span> <span class="tk-op">+</span> <span class="tk-str">&quot;x&quot;</span><span class="tk-op">.</span><span class="tk-fn">repeat</span><span class="tk-op">(</span><span class="tk-num">50</span><span class="tk-op">)</span> <span class="tk-op">+</span> <span class="tk-str">&quot;')&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">close</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">size</span> <span class="tk-op">=</span> <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">statSync</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">size</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">ok</span><span class="tk-op">(</span><span class="tk-ident">size</span> <span class="tk-op">&lt;</span> <span class="tk-ident">PAGE_SIZE</span> <span class="tk-op">*</span> <span class="tk-num">40</span><span class="tk-op">,</span> <span class="tk-str">&quot;file size should be bounded by page reuse; actual: &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">size</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;DiskStore: an empty database can be opened&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">filePath</span> <span class="tk-op">=</span> <span class="tk-fn">file</span><span class="tk-op">(</span><span class="tk-str">&quot;empty.db&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">openDatabase</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">listTables</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">close</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">reopened</span> <span class="tk-op">=</span> <span class="tk-fn">openDatabase</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">reopened</span><span class="tk-op">.</span><span class="tk-fn">listTables</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">reopened</span><span class="tk-op">.</span><span class="tk-fn">close</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;journal: a valid journal is replayed&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">filePath</span> <span class="tk-op">=</span> <span class="tk-fn">file</span><span class="tk-op">(</span><span class="tk-str">&quot;journal.db&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">writeFileSync</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">,</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-fn">alloc</span><span class="tk-op">(</span><span class="tk-ident">PAGE_SIZE</span> <span class="tk-op">*</span> <span class="tk-num">2</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">page</span> <span class="tk-op">=</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-fn">alloc</span><span class="tk-op">(</span><span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">write</span><span class="tk-op">(</span><span class="tk-str">&quot;NEWDATA&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-fn">writeJournal</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">,</span> <span class="tk-kw">new</span> <span class="tk-type">Map</span><span class="tk-op">(</span><span class="tk-op">[</span><span class="tk-op">[</span><span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-ident">page</span><span class="tk-op">]</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">ok</span><span class="tk-op">(</span><span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">existsSync</span><span class="tk-op">(</span><span class="tk-fn">journalPath</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">recoverJournal</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">,</span> <span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">true</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">existsSync</span><span class="tk-op">(</span><span class="tk-fn">journalPath</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">false</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">readFileSync</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">subarray</span><span class="tk-op">(</span><span class="tk-ident">PAGE_SIZE</span><span class="tk-op">,</span> <span class="tk-ident">PAGE_SIZE</span> <span class="tk-op">+</span> <span class="tk-num">7</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">toString</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-str">&quot;NEWDATA&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;journal: a journal without COMMIT is discarded and the database stays as it was&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">filePath</span> <span class="tk-op">=</span> <span class="tk-fn">file</span><span class="tk-op">(</span><span class="tk-str">&quot;journal-torn.db&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">writeFileSync</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">,</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-fn">alloc</span><span class="tk-op">(</span><span class="tk-ident">PAGE_SIZE</span> <span class="tk-op">*</span> <span class="tk-num">2</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">page</span> <span class="tk-op">=</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-fn">alloc</span><span class="tk-op">(</span><span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">page</span><span class="tk-op">.</span><span class="tk-fn">write</span><span class="tk-op">(</span><span class="tk-str">&quot;NEWDATA&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-fn">writeJournal</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">,</span> <span class="tk-kw">new</span> <span class="tk-type">Map</span><span class="tk-op">(</span><span class="tk-op">[</span><span class="tk-op">[</span><span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-ident">page</span><span class="tk-op">]</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+  <span class="tk-com">// simulate &quot;power loss mid-write&quot;: truncate part of the journal</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">journal</span> <span class="tk-op">=</span> <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">readFileSync</span><span class="tk-op">(</span><span class="tk-fn">journalPath</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">writeFileSync</span><span class="tk-op">(</span><span class="tk-fn">journalPath</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-ident">journal</span><span class="tk-op">.</span><span class="tk-fn">subarray</span><span class="tk-op">(</span><span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-ident">journal</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">-</span> <span class="tk-num">20</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">recoverJournal</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">,</span> <span class="tk-ident">PAGE_SIZE</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">false</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">existsSync</span><span class="tk-op">(</span><span class="tk-fn">journalPath</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-kw">false</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">pageAfter</span> <span class="tk-op">=</span> <span class="tk-ident">fs</span><span class="tk-op">.</span><span class="tk-fn">readFileSync</span><span class="tk-op">(</span><span class="tk-ident">filePath</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">subarray</span><span class="tk-op">(</span><span class="tk-ident">PAGE_SIZE</span><span class="tk-op">,</span> <span class="tk-ident">PAGE_SIZE</span> <span class="tk-op">+</span> <span class="tk-num">7</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-op">[</span><span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-ident">pageAfter</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;crc32: same content, same value; one changed byte differs&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">a</span> <span class="tk-op">=</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-kw">from</span><span class="tk-op">(</span><span class="tk-str">&quot;hello&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">b</span> <span class="tk-op">=</span> <span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-kw">from</span><span class="tk-op">(</span><span class="tk-str">&quot;hellp&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-fn">crc32</span><span class="tk-op">(</span><span class="tk-ident">a</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-fn">crc32</span><span class="tk-op">(</span><span class="tk-type">Buffer</span><span class="tk-op">.</span><span class="tk-kw">from</span><span class="tk-op">(</span><span class="tk-str">&quot;hello&quot;</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">notEqual</span><span class="tk-op">(</span><span class="tk-fn">crc32</span><span class="tk-op">(</span><span class="tk-ident">a</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-fn">crc32</span><span class="tk-op">(</span><span class="tk-ident">b</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span></code></pre></div>
+
+  <div class="checkpoint">
+    <p class="checkpoint__title">Checkpoint — the data really survived</p>
+    <pre class="code"><code>node --test tests/disk.test.js tests/transaction.test.js</code></pre>
+    <p class="checkpoint__expect">ℹ tests 16
+ℹ pass 16
+ℹ fail 0</p>
+    <p>Then run the two-part CLI test again:</p>
+    <pre class="code"><code>node bin/sql.js demo.db &lt; part1.sql   # create tables and data
+node bin/sql.js demo.db &lt; part2.sql   # reopen and query the data</code></pre>
+  </div>
+
+  <h2 id="limits">Limitations of the teaching version, and what's next</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Limitation</th><th>Reason</th><th>Possible fix</th></tr></thead>
+      <tbody>
+        <tr><td>every commit rewrites all tables</td><td>simple, hard to get wrong</td><td>write only dirty pages, add checkpoints</td></tr>
+        <tr><td>the whole database lives in memory</td><td>simpler query logic</td><td>page cache + load pages on demand</td></tr>
+        <tr><td>no indexes</td><td>chapter scope</td><td>B-tree or hash index, starting with primary key lookups</td></tr>
+        <tr><td>no concurrency control</td><td>single process</td><td>file locks, MVCC, WAL LSNs</td></tr>
+        <tr><td>no query planner</td><td>the pipeline has a fixed order</td><td>EXPLAIN, cost estimates, choosing the driving table</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Congratulations on making it this far. You now have <strong>a SQL database that really saves,
+    queries, and runs transactions</strong>, and you wrote every byte yourself. The best way to keep
+    learning is: pick one limitation above and change it.
+  </p>
+
+  <h2 id="recap">Chapter recap</h2>
+  <ul>
+    <li>A database file is made of 4096-byte pages: header, catalog, heap.</li>
+    <li>A slotted page lets rows grow from the end of the page while slots grow from the front.</li>
+    <li>The journal is written before commit and replayed after a crash; without a COMMIT marker it's discarded.</li>
+    <li>Transactions are implemented with snapshots: BEGIN snapshots, ROLLBACK restores, COMMIT writes the file.</li>
+  </ul>
+
+  <div class="exercise">
+    <p class="exercise__title">Exercises</p>
+    <ol>
+      <li>Implement <code>VACUUM</code>: rewrite every table into contiguous pages to shrink the file.</li>
+      <li>Build a B+tree index for the PRIMARY KEY so <code>WHERE id = ?</code> doesn't scan the whole table.</li>
+      <li>Add a <code>.backup &lt;file&gt;</code> command that copies a consistent backup using the existing page format.</li>
+    </ol>
+  </div>
+
+  <h2 id="vocab">Chapter glossary</h2>
+  <dl class="vocab">
+    <dt>Pager</dt><dd>The module that reads and writes fixed-size pages.</dd>
+    <dt>Slotted page</dt><dd>A page layout where a slot array points at the actual data, making deletes and moves cheap.</dd>
+    <dt>Journal / WAL</dt><dd>Write changes to a log first, then apply them to the main file; used for crash recovery.</dd>
+    <dt>Roll forward</dt><dd>Replay committed changes from the log so the data returns to a consistent state.</dd>
+    <dt>Autocommit</dt><dd>Every statement automatically becomes a transaction.</dd>
+  </dl>
+</article>
+
+
+      <footer class="chapter-foot site-chapter-foot">
+        <div class="chapter-foot__inner">
+          <p class="chapter-foot__label">Finished this chapter? Mark it complete and the progress stays in this browser.</p>
+          <button id="mark-complete" class="btn btn--complete" type="button"
+                  data-chapter="" aria-pressed="false">Mark chapter complete</button>
+        </div>
+        <nav class="pager" aria-label="Previous and next chapter">
+          <a class="pager-link pager-link--prev" href="../chapters/ch09.html"><span class="pager-link__meta">Previous chapter</span><span class="pager-link__title">Chapter 9 · JOIN</span></a>
+          
+        </nav>
+      </footer>
+    </div>
+    <aside id="page-toc" class="page-toc" aria-label="On this page"></aside>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <p><strong>Build a SQL Database Engine from Scratch</strong> — ten chapters that start with a single character and end with a database that persists, queries, and transacts.</p>
+        <p class="footer-mono">Zero dependencies · Node.js only · built by hand</p>
+      </div>
+      <div>
+        <p class="footer-mono"><a href="../playground.html">SQL Playground</a> · <a href="../reference.html">Syntax Reference</a> · <a href="../index.html">Home</a></p>
+        <p class="footer-mono">Switch between light and dark themes in the top-right corner.</p>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="search-overlay" role="dialog" aria-modal="true" aria-label="Search chapters" aria-hidden="true">
+    <div class="search-panel">
+      <div class="search-panel__head">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <input id="search-input" type="search" placeholder="Search chapter titles or summaries…"
+               autocomplete="off" spellcheck="false" aria-label="Search chapters">
+        <span class="search-panel__esc">Esc</span>
+      </div>
+      <ul class="search-results" id="search-results"></ul>
+      <div class="search-panel__foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> select</span>
+        <span><kbd>Enter</kbd> open</span>
+        <span><kbd>/</kbd> open search</span>
+        <span><kbd>[</kbd><kbd>]</kbd> previous / next chapter</span>
+      </div>
+    </div>
+  </div>
+
+  <noscript>
+    <p style="max-width:74ch;margin:1rem auto;padding:0 1rem;font-family:monospace;color:#6e675c">
+      The main content of this site is readable without JavaScript; search, theme switching, and progress tracking need it enabled.
+    </p>
+  </noscript>
+</body>
+</html>

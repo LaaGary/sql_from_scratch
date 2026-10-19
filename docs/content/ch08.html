@@ -1,0 +1,112 @@
+<aside class="chapter-meta">
+  <h2 class="chapter-meta__title">Chapter info</h2>
+  <ul class="chapter-meta__list">
+    <li><strong>Estimated time</strong> 40 minutes</li>
+    <li><strong>Difficulty</strong> ★★☆☆☆</li>
+    <li><strong>What you'll learn</strong> The UPDATE / DELETE execution flow, old-value semantics, statement atomicity</li>
+    <li><strong>What you'll build</strong> changes to <code>src/engine/write.js</code>, executor dispatch</li>
+  </ul>
+</aside>
+
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Chapter 08 / Updates and deletes</p>
+    <h1>Making data move: UPDATE / DELETE and statement atomicity</h1>
+    <p class="chapter-lead">
+      So far we can only add data. This chapter adds modification and deletion, and handles a problem
+      that's easy to overlook: if an UPDATE violates a constraint on the fifth row, should the changes to
+      the first four rows stay? The answer is no.
+    </p>
+  </header>
+
+  <h2 id="update">How UPDATE works</h2>
+  <ol>
+    <li>Find the target table, then check that every SET column exists (so a typo doesn't surface halfway through).</li>
+    <li>Scan all rows and filter with the WHERE condition; with no WHERE, that's every row.</li>
+    <li>Compute the new values for each row. Note: <strong>every assignment sees the old values</strong>.</li>
+    <li>Hand the new values to <code>Table.update()</code>, which checks constraints and writes them back.</li>
+  </ol>
+  <p>
+    The third point matters. Consider this example:
+  </p>
+  <pre class="code"><code>UPDATE books SET price = 1, stock = stock + 10 WHERE id = 2;</code></pre>
+  <p>
+    If we set <code>price</code> to 1 first and then compute <code>stock + 10</code>, the result doesn't
+    change; but if the two assignments reference each other (<code>SET a = b, b = a</code>, a swap), the
+    order affects the result. The SQL spec says: <b>every value in one UPDATE is computed from the
+    pre-change row</b>. Our implementation computes the whole patch first and then hands it to Table in
+    one go, so it gets this semantics for free.
+  </p>
+
+  <h2 id="delete">How DELETE works</h2>
+  <p>
+    Filter the rows that match WHERE, then delete them one by one. Rows live in a <code>Map</code> keyed
+    by rowid, so deletion is O(1). Deleted rowids are never reused, so "delete then insert" won't
+    resurrect an old identifier.
+  </p>
+
+  <h2 id="atomicity">Statement atomicity: roll the whole thing back on failure</h2>
+  <p>
+    Picture <code>UPDATE books SET id = 1 WHERE id &gt;= 2</code>: changing the first row to 1 is fine,
+    but the second hits the PRIMARY KEY. Without rollback, the database would be left in a half-updated
+    state.
+  </p>
+  <p>
+    We already put the guard in <code>Database.exec()</code> in Chapter 6: take a snapshot before every
+    statement, and call <code>loadSnapshot()</code> on error. This chapter just applies the same mechanism
+    to the new statements and confirms with tests that it really works.
+  </p>
+  <div class="callout callout--note">
+    <p class="callout__title">The cost of snapshots</p>
+    <p>
+      Copying the whole database for every statement is fine at small data sizes, but it's wasteful.
+      Chapter 10 uses "remember only the pages that changed" plus a transaction journal to do this
+      efficiently — that's why real databases need a WAL / journal.
+    </p>
+  </div>
+
+  <!-- diff src/engine/write.js from=07 to=08 title="src/engine/write.js: add UPDATE / DELETE" -->
+
+  <p>Finally, wire the new statements into the executor:</p>
+
+  <!-- diff src/engine/executor.js from=07 to=08 title="src/engine/executor.js: dispatch UPDATE / DELETE" -->
+
+  <h2 id="tests">Tests: don't let half-finished changes survive</h2>
+  <p>
+    Beyond basic updates and deletes, the tests check two things in particular: old-value semantics across
+    multiple assignments, and full-statement rollback when a constraint is violated.
+  </p>
+
+  <!-- include tests/write.test.js step=08 title="tests/write.test.js" -->
+
+  <div class="checkpoint">
+    <p class="checkpoint__title">Checkpoint — edits don't corrupt data</p>
+    <pre class="code"><code>node --test tests/write.test.js</code></pre>
+    <p class="checkpoint__expect">ℹ tests 7
+ℹ pass 7
+ℹ fail 0</p>
+  </div>
+
+  <h2 id="recap">Chapter recap</h2>
+  <ul>
+    <li>UPDATE computes the new row in full before writing it back; every assignment uses the old values.</li>
+    <li>DELETE filters by WHERE and removes rows one by one; rowids are never reused.</li>
+    <li>A statement is an atomic unit: on failure the whole statement rolls back, leaving no partial changes.</li>
+  </ul>
+
+  <div class="exercise">
+    <p class="exercise__title">Exercises</p>
+    <ol>
+      <li>Support <code>UPDATE ... LIMIT 10</code> (MySQL has it; standard SQL doesn't).</li>
+      <li>Make <code>DELETE</code> return the list of deleted rowids for easier debugging.</li>
+      <li>Compare "snapshot first" and "validate all rows before writing" as two approaches to atomicity. What are the tradeoffs?</li>
+    </ol>
+  </div>
+
+  <h2 id="vocab">Chapter glossary</h2>
+  <dl class="vocab">
+    <dt>Atomicity</dt><dd>An operation either fully succeeds or doesn't happen at all.</dd>
+    <dt>Rollback</dt><dd>Restoring data to its state before the operation.</dd>
+    <dt>Old-value semantics</dt><dd>Every computation in one UPDATE uses the pre-change row.</dd>
+  </dl>
+</article>

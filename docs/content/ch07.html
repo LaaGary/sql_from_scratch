@@ -1,0 +1,151 @@
+<aside class="chapter-meta">
+  <h2 class="chapter-meta__title">Chapter info</h2>
+  <ul class="chapter-meta__list">
+    <li><strong>Estimated time</strong> 50 minutes</li>
+    <li><strong>Difficulty</strong> ★★★☆☆</li>
+    <li><strong>What you'll learn</strong> Aggregate functions, grouping, HAVING, aggregate state caching</li>
+    <li><strong>What you'll build</strong> <code>src/engine/aggregate.js</code>, changes to <code>engine/query.js</code></li>
+  </ul>
+</aside>
+
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Chapter 07 / Aggregates and grouping</p>
+    <h1>Turning many rows into one number: aggregates and GROUP BY</h1>
+    <p class="chapter-lead">
+      <code>SELECT COUNT(*) FROM books</code> returns a single row, and that row isn't any of the data
+      rows — it's a summary of the whole table. That's aggregation: compressing a set of rows into one
+      value. This chapter extends last chapter's query pipeline into two phases: group first, then
+      compute per group.
+    </p>
+  </header>
+
+  <h2 id="two-cases">Two cases: whole table and grouped</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Syntax</th><th>Semantics</th><th>Result row count</th></tr></thead>
+      <tbody>
+        <tr><td><code>SELECT COUNT(*) FROM books</code></td><td>the whole table is one group</td><td>1</td></tr>
+        <tr><td><code>SELECT author, COUNT(*) FROM books GROUP BY author</code></td><td>one group per author</td><td>number of authors</td></tr>
+        <tr><td><code>SELECT COUNT(*) FROM books WHERE id &gt; 99</code></td><td>no rows match, but there's still one group</td><td>1 (COUNT is 0)</td></tr>
+        <tr><td><code>SELECT author, COUNT(*) FROM books WHERE id &gt; 99 GROUP BY author</code></td><td>no groups at all</td><td>0</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    The last two rows are easy to get wrong. Without GROUP BY the whole table is always one group, even
+    if it contains no rows; with GROUP BY, no rows means no groups, so the result has zero rows. That
+    difference lives in <code>buildGroups()</code>: when <code>groupBy.length === 0</code> it pushes a
+    single group.
+  </p>
+
+  <h2 id="aggregate">Five aggregate functions</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Function</th><th>Meaning</th><th>Ignores NULL?</th><th>Empty set</th></tr></thead>
+      <tbody>
+        <tr><td><code>COUNT(*)</code></td><td>number of rows</td><td>no (counts every row)</td><td>0</td></tr>
+        <tr><td><code>COUNT(x)</code></td><td>number of non-NULL values</td><td>yes</td><td>0</td></tr>
+        <tr><td><code>SUM(x)</code></td><td>sum</td><td>yes</td><td>NULL</td></tr>
+        <tr><td><code>AVG(x)</code></td><td>average</td><td>yes</td><td>NULL</td></tr>
+        <tr><td><code>MIN(x)</code> / <code>MAX(x)</code></td><td>minimum / maximum</td><td>yes</td><td>NULL</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    <code>COUNT(DISTINCT author)</code> is supported too: deduplicate, then count. Deduplication uses
+    <code>groupKey()</code>, so the number 1 and the string '1' are not treated as the same value.
+  </p>
+
+  <!-- include src/engine/aggregate.js step=07 title="src/engine/aggregate.js" -->
+
+  <h2 id="state">Aggregate state: evaluate each expression once</h2>
+  <p>
+    An aggregate expression can appear in SELECT, HAVING, and ORDER BY at the same time. For example:
+  </p>
+  <pre class="code"><code>SELECT author, COUNT(*) AS n
+FROM books
+GROUP BY author
+HAVING COUNT(*) &gt; 1
+ORDER BY n DESC;</code></pre>
+  <p>
+    <code>COUNT(*)</code> appears twice (SELECT and HAVING). Re-scanning the group on every evaluation
+    would be much slower and would complicate the code. Our approach: collect all aggregate expressions in
+    the query up front, build a <strong>cache</strong> for each group, and look the value up when
+    evaluating.
+  </p>
+  <pre class="code"><code>// a group object looks like this
+{
+  row: representativeRow,   // for non-aggregate columns (SQLite style: first row wins)
+  rows: [ ... ],            // every row in this group
+  state: {
+    aggregate(expr) {       // look up the cache by the JSON-ified AST
+      return cache.get(JSON.stringify(expr));
+    }
+  }
+}</code></pre>
+  <p>
+    This also makes a query with aggregates but no GROUP BY work naturally: the whole table is one group,
+    and the representative row is the first row.
+  </p>
+
+  <h2 id="pipeline">Changes to the query pipeline</h2>
+  <p>
+    Introduce a <code>unit</code> concept for each row: with grouping, a unit is a group; without
+    grouping, a unit is a single row plus an empty aggregate state. Projection, HAVING, and ORDER BY all
+    evaluate against the unit.
+  </p>
+
+  <!-- diff src/engine/query.js from=06 to=07 title="src/engine/query.js: step 6 → step 7" -->
+
+  <div class="callout callout--warn">
+    <p class="callout__title">SQLite's bare-column behavior</p>
+    <p>
+      <code>SELECT author, COUNT(*) FROM books</code> is an error in standard SQL (author isn't in GROUP
+      BY). SQLite allows it and picks an arbitrary row's value from the group. Our implementation matches
+      SQLite: take the first row. Convenient, but it makes unexpected queries easy to write — in
+      practice, put every non-aggregate column in GROUP BY.
+    </p>
+  </div>
+
+  <h2 id="tests">Tests: aggregate edge cases</h2>
+  <p>
+    Aggregate tests need special attention to the empty set and NULL: over no non-NULL values,
+    <code>SUM</code> is NULL, not 0, while <code>COUNT(*)</code> is 0. Those are the differences you
+    actually run into in practice.
+  </p>
+
+  <!-- include tests/aggregate.test.js step=07 title="tests/aggregate.test.js" -->
+
+  <div class="checkpoint">
+    <p class="checkpoint__title">Checkpoint — grouped statistics</p>
+    <pre class="code"><code>node --test tests/aggregate.test.js</code></pre>
+    <p class="checkpoint__expect">ℹ tests 13
+ℹ pass 13
+ℹ fail 0</p>
+    <p>Then try this in the REPL: <code>SELECT author, COUNT(*) AS n, SUM(price) FROM books GROUP BY author ORDER BY n DESC;</code></p>
+  </div>
+
+  <h2 id="recap">Chapter recap</h2>
+  <ul>
+    <li>An aggregate compresses a group of rows into one value; without GROUP BY the whole table is one group.</li>
+    <li>COUNT counts rows, the other aggregates ignore NULL, and the empty set behaves differently.</li>
+    <li>Aggregate results are cached so SELECT, HAVING, and ORDER BY share one computation.</li>
+  </ul>
+
+  <div class="exercise">
+    <p class="exercise__title">Exercises</p>
+    <ol>
+      <li>Add a <code>GROUP_CONCAT(x, ',')</code> aggregate that concatenates strings.</li>
+      <li>Support multi-column deduplication with <code>COUNT(DISTINCT a, b)</code>.</li>
+      <li>Think about it: if the GROUP BY columns were indexed, could we group without sorting first? How does that relate to external sorting?</li>
+    </ol>
+  </div>
+
+  <h2 id="vocab">Chapter glossary</h2>
+  <dl class="vocab">
+    <dt>Aggregate</dt><dd>A computation that compresses many rows into one value, such as COUNT or SUM.</dd>
+    <dt>Group</dt><dd>The set of rows that share a GROUP BY value.</dd>
+    <dt>HAVING</dt><dd>A condition that filters groups; WHERE filters rows, HAVING filters groups.</dd>
+  </dl>
+</article>

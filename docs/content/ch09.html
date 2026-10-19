@@ -1,0 +1,131 @@
+<aside class="chapter-meta">
+  <h2 class="chapter-meta__title">Chapter info</h2>
+  <ul class="chapter-meta__list">
+    <li><strong>Estimated time</strong> 45 minutes</li>
+    <li><strong>Difficulty</strong> ★★★☆☆</li>
+    <li><strong>What you'll learn</strong> Nested loop JOIN, LEFT JOIN, ambiguous columns, JOIN performance</li>
+    <li><strong>What you'll build</strong> changes to <code>src/engine/query.js</code></li>
+  </ul>
+</aside>
+
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Chapter 09 / JOIN</p>
+    <h1>Connecting two tables: JOIN and nested loops</h1>
+    <p class="chapter-lead">
+      Real databases rarely have just one table: books have authors, orders have customers, comments have
+      articles. JOIN is the operation that pairs rows from two tables by some condition. Its
+      implementation is surprisingly simple — two loops — but that's also where the performance problems
+      start.
+    </p>
+  </header>
+
+  <h2 id="semantics">JOIN semantics</h2>
+  <p>
+    <code>books JOIN authors ON books.author_id = authors.id</code> means: for each row in books, find
+    every authors row whose "author_id equals authors.id" and pair it up. If a book matches two authors
+    (which shouldn't happen in theory, but can without a foreign key constraint), you get two rows.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Type</th><th>Behavior</th><th>Our support</th></tr></thead>
+      <tbody>
+        <tr><td><code>JOIN</code> / <code>INNER JOIN</code></td><td>keep only rows that match on both sides</td><td>✅</td></tr>
+        <tr><td><code>LEFT JOIN</code></td><td>left rows are always kept; an unmatched right side is filled with NULL</td><td>✅</td></tr>
+        <tr><td><code>RIGHT JOIN</code> / <code>FULL JOIN</code></td><td>keep the reverse side, or both sides</td><td>❌ (try it yourself)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="nested-loop">Nested loops: the most obvious implementation</h2>
+  <p>
+    In pseudocode:
+  </p>
+  <pre class="code"><code>for (each row on the left) {
+  let matched = false;
+  for (each row on the right) {
+    if (ON condition holds) {
+      output left + right;
+      matched = true;
+    }
+  }
+  if (!matched &amp;&amp; is LEFT JOIN) {
+    output left + right side all NULL;
+  }
+}</code></pre>
+  <p>
+    Our <code>scan()</code> uses the same idea, except the generator yields one row at a time so we never
+    have to materialize every combination in memory.
+  </p>
+
+  <h2 id="ambiguity">Why do columns need aliases after a JOIN?</h2>
+  <p>
+    Both tables may have <code>id</code>. If you write <code>SELECT id FROM books JOIN authors ...</code>,
+    the engine can't tell which one you mean, and the correct response is to raise:
+  </p>
+  <pre class="code"><code>AMBIGUOUS_COLUMN: ambiguous column name: id exists in both books and authors
+Hint: add a table alias, for example b.id</code></pre>
+  <p>
+    This check was actually written in Chapter 6's <code>evaluateColumn()</code>: it collects all matching
+    sources, reports "column not found" for zero and "ambiguous" for more than one. JOIN is just what
+    makes the situation real.
+  </p>
+
+  <h2 id="patch">Changes to the query pipeline</h2>
+  <p>
+    The changes are concentrated in two places: <code>buildSources()</code> has to collect the JOIN
+    sources (including the duplicate-alias check), and <code>scan()</code> has to run the nested loop.
+    WHERE, projection, grouping, and sorting don't change at all — they just see "rows with more sources".
+  </p>
+
+  <!-- diff src/engine/query.js from=08 to=09 title="src/engine/query.js: step 8 → step 9" -->
+
+  <div class="callout callout--warn">
+    <p class="callout__title">Performance: O(left × right)</p>
+    <p>
+      With 10,000 books and 1,000 authors, the nested loop performs 10 million comparisons. Real databases
+      use an <strong>index</strong> (B-tree) or a <strong>hash table</strong> to take "find the matching
+      rows" from O(n) down to O(log n) or O(1). That's why JOIN columns are worth indexing.
+    </p>
+  </div>
+
+  <h2 id="tests">Tests: JOIN semantic edges</h2>
+  <p>
+    The tests cover INNER / LEFT, multiple JOINs, JOIN + aggregation, ambiguous columns, duplicate
+    aliases, cross joins without ON, and self joins. Those are the combinations you run into in practice.
+  </p>
+
+  <!-- include tests/join.test.js step=09 title="tests/join.test.js" -->
+
+  <div class="checkpoint">
+    <p class="checkpoint__title">Checkpoint — two tables connected</p>
+    <pre class="code"><code>node --test tests/join.test.js</code></pre>
+    <p class="checkpoint__expect">ℹ tests 8
+ℹ pass 8
+ℹ fail 0</p>
+  </div>
+
+  <h2 id="recap">Chapter recap</h2>
+  <ul>
+    <li>JOIN is implemented with nested loops: for each left row, scan the right side.</li>
+    <li>LEFT JOIN keeps the left row when the right side has no match, filling right columns with NULL.</li>
+    <li>Columns with the same name need an alias; otherwise the engine raises AMBIGUOUS_COLUMN.</li>
+    <li>JOIN's performance bottleneck is O(n×m); indexes are the next step.</li>
+  </ul>
+
+  <div class="exercise">
+    <p class="exercise__title">Exercises</p>
+    <ol>
+      <li>Implement <code>RIGHT JOIN</code>: swap the two sides, do a LEFT JOIN, then reorder the columns.</li>
+      <li>Support <code>JOIN ... USING (id)</code>: it means equality on the same-named columns, and the output keeps only one copy.</li>
+      <li>Run a small experiment: with 5,000 rows, compare the time for a JOIN against narrowing the rows with WHERE first and then joining.</li>
+    </ol>
+  </div>
+
+  <h2 id="vocab">Chapter glossary</h2>
+  <dl class="vocab">
+    <dt>Nested loop join</dt><dd>An implementation that compares the two sides with two nested loops.</dd>
+    <dt>Driving table</dt><dd>The table scanned by the outer loop; usually the smaller one, or the one with fewer rows after filtering.</dd>
+    <dt>Cartesian product</dt><dd>A JOIN without an ON condition, producing left-rows × right-rows output.</dd>
+  </dl>
+</article>

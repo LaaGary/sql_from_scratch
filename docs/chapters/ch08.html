@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chapter 8 · Update and delete — Building an SQL database engine from scratch</title>
+  <meta name="description" content="Row-by-row rewriting, WHERE filtering, old-value semantics, and rolling back the whole statement on failure.">
+  <meta property="og:title" content="Chapter 8 · Update and delete — Building an SQL database engine from scratch">
+  <meta property="og:description" content="Row-by-row rewriting, WHERE filtering, old-value semantics, and rolling back the whole statement on failure.">
+  <meta property="og:type" content="article">
+  <meta property="og:locale" content="en_US">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("sql-theme");
+        document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script defer src="../assets/toc.js"></script>
+  <script defer src="../assets/site.js"></script>
+</head>
+<body class="page page--chapter" data-page-kind="chapter"
+      data-prev-url="../chapters/ch07.html" data-next-url="../chapters/ch09.html">
+
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <div id="reading-progress" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="site-header__left">
+      <button id="sidebar-toggle" class="icon-btn" type="button"
+              aria-label="Open chapter navigation" aria-controls="sidebar" aria-expanded="false">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <path d="M2 4h12M2 8h12M2 12h12" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <a class="brand" href="../index.html">
+        <span class="brand__mark" aria-hidden="true">SQL</span>
+        <span class="brand__name">SQL from Scratch</span>
+      </a>
+      <span class="header-chapter">Chapter 8 · Update and delete</span>
+    </div>
+    <div class="site-header__right">
+      <span class="header-progress" data-progress-label>0/10 complete</span>
+      <button id="search-toggle" class="icon-btn icon-btn--search" type="button"
+              aria-label="Search chapters" aria-haspopup="dialog">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <span class="icon-btn__label">Search</span>
+        <span class="kbd-hint">/</span>
+      </button>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
+        <svg class="theme-icon theme-icon--sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="8" cy="8" r="3"/>
+          <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" stroke-linecap="round"/>
+        </svg>
+        <svg class="theme-icon theme-icon--moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M13.4 9.6A5.8 5.8 0 0 1 6.4 2.6a5.8 5.8 0 1 0 7 7Z" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <aside class="sidebar" id="sidebar" aria-label="Chapter navigation">
+    <div class="sidebar__scroll">
+      <p class="sidebar__heading">Chapter Index</p>
+      <ol class="toc-list"><li class="toc-item"><a class="toc-link" href="../chapters/ch01.html"><span class="toc-num">01</span><span class="toc-title">Orientation and skeleton</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch02.html"><span class="toc-num">02</span><span class="toc-title">Lexing</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch03.html"><span class="toc-num">03</span><span class="toc-title">Parsing</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch04.html"><span class="toc-num">04</span><span class="toc-title">Values and types</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch05.html"><span class="toc-num">05</span><span class="toc-title">Storage layer</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch06.html"><span class="toc-num">06</span><span class="toc-title">SELECT pipeline</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch07.html"><span class="toc-num">07</span><span class="toc-title">Aggregates and grouping</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch08.html"><span class="toc-num">08</span><span class="toc-title">Update and delete</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch09.html"><span class="toc-num">09</span><span class="toc-title">JOIN</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch10.html"><span class="toc-num">10</span><span class="toc-title">Persistence and transactions</span></a></li></ol>
+      <p class="sidebar__heading">Tools</p>
+      <nav class="nav-list" aria-label="Tools">
+        <a class="toc-link" href="../playground.html"><span class="toc-num">▸</span><span class="toc-title">SQL Playground</span></a>
+        <a class="toc-link" href="../reference.html"><span class="toc-num">▸</span><span class="toc-title">Syntax Reference</span></a>
+        <a class="toc-link" href="../index.html"><span class="toc-num">▸</span><span class="toc-title">Home &amp; Roadmap</span></a>
+      </nav>
+    </div>
+    <div class="sidebar__foot">
+      <a href="../index.html"><span>Home</span><span>⌂</span></a>
+      <a href="../playground.html"><span>Playground</span><span>⟩</span></a>
+      <a href="../reference.html"><span>Reference</span><span>⌗</span></a>
+      <p class="sidebar__version">SQL engine tutorial · 0.1<br>Zero dependencies · works offline</p>
+    </div>
+  </aside>
+  <div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
+
+  <main id="main" class="layout">
+    <div class="content-column">
+      <aside class="chapter-meta">
+  <h2 class="chapter-meta__title">Chapter info</h2>
+  <ul class="chapter-meta__list">
+    <li><strong>Estimated time</strong> 40 minutes</li>
+    <li><strong>Difficulty</strong> ★★☆☆☆</li>
+    <li><strong>What you'll learn</strong> The UPDATE / DELETE execution flow, old-value semantics, statement atomicity</li>
+    <li><strong>What you'll build</strong> changes to <code>src/engine/write.js</code>, executor dispatch</li>
+  </ul>
+</aside>
+
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Chapter 08 / Updates and deletes</p>
+    <h1>Making data move: UPDATE / DELETE and statement atomicity</h1>
+    <p class="chapter-lead">
+      So far we can only add data. This chapter adds modification and deletion, and handles a problem
+      that's easy to overlook: if an UPDATE violates a constraint on the fifth row, should the changes to
+      the first four rows stay? The answer is no.
+    </p>
+  </header>
+
+  <h2 id="update">How UPDATE works</h2>
+  <ol>
+    <li>Find the target table, then check that every SET column exists (so a typo doesn't surface halfway through).</li>
+    <li>Scan all rows and filter with the WHERE condition; with no WHERE, that's every row.</li>
+    <li>Compute the new values for each row. Note: <strong>every assignment sees the old values</strong>.</li>
+    <li>Hand the new values to <code>Table.update()</code>, which checks constraints and writes them back.</li>
+  </ol>
+  <p>
+    The third point matters. Consider this example:
+  </p>
+  <pre class="code"><code>UPDATE books SET price = 1, stock = stock + 10 WHERE id = 2;</code></pre>
+  <p>
+    If we set <code>price</code> to 1 first and then compute <code>stock + 10</code>, the result doesn't
+    change; but if the two assignments reference each other (<code>SET a = b, b = a</code>, a swap), the
+    order affects the result. The SQL spec says: <b>every value in one UPDATE is computed from the
+    pre-change row</b>. Our implementation computes the whole patch first and then hands it to Table in
+    one go, so it gets this semantics for free.
+  </p>
+
+  <h2 id="delete">How DELETE works</h2>
+  <p>
+    Filter the rows that match WHERE, then delete them one by one. Rows live in a <code>Map</code> keyed
+    by rowid, so deletion is O(1). Deleted rowids are never reused, so "delete then insert" won't
+    resurrect an old identifier.
+  </p>
+
+  <h2 id="atomicity">Statement atomicity: roll the whole thing back on failure</h2>
+  <p>
+    Picture <code>UPDATE books SET id = 1 WHERE id &gt;= 2</code>: changing the first row to 1 is fine,
+    but the second hits the PRIMARY KEY. Without rollback, the database would be left in a half-updated
+    state.
+  </p>
+  <p>
+    We already put the guard in <code>Database.exec()</code> in Chapter 6: take a snapshot before every
+    statement, and call <code>loadSnapshot()</code> on error. This chapter just applies the same mechanism
+    to the new statements and confirms with tests that it really works.
+  </p>
+  <div class="callout callout--note">
+    <p class="callout__title">The cost of snapshots</p>
+    <p>
+      Copying the whole database for every statement is fine at small data sizes, but it's wasteful.
+      Chapter 10 uses "remember only the pages that changed" plus a transaction journal to do this
+      efficiently — that's why real databases need a WAL / journal.
+    </p>
+  </div>
+
+  <p class="diff__label">src/engine/write.js: add UPDATE / DELETE</p><div class="diff"><pre class="code code--diff"><code><span class="d-ctx">  /**</span>
+<span class="d-ctx">   * Execution of write statements: CREATE TABLE, DROP TABLE, INSERT</span>
+<span class="d-ctx">   *</span>
+<span class="d-ctx">   * Actual data changes are handled by Table (src/table.js); this file only:</span>
+<span class="d-ctx">   *   1. finds the target table from the AST</span>
+<span class="d-ctx">   *   2. evaluates AST expressions to values</span>
+<span class="d-ctx">   *   3. builds the object Table.insert() expects</span>
+<span class="d-ctx">   *   4. returns a uniform execution result</span>
+<span class="d-ctx">   *</span>
+<span class="d-ctx">   * UPDATE / DELETE live here too: their flow is similar to INSERT, except they first find</span>
+<span class="d-ctx">   * rows matching WHERE, then rewrite them one by one.</span>
+<span class="d-ctx">   */</span>
+<span class="d-ctx">  import { SqlError } from &quot;../errors.js&quot;;</span>
+<span class="d-ctx">  import { buildTableSchema, findColumn } from &quot;../schema.js&quot;;</span>
+<span class="d-ctx">  import { evaluate } from &quot;./expr.js&quot;;</span>
+<span class="d-ctx">  import { truthy } from &quot;../values.js&quot;;</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  /** Create a uniform &quot;command result&quot; object. */</span>
+<span class="d-ctx">  export function commandResult(message, { changes = 0, lastInsertRowid = null } = {}) {</span>
+<span class="d-ctx">    return { type: &quot;command&quot;, message, changes, lastInsertRowid };</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  export function executeCreateTable(db, ast) {</span>
+<span class="d-ctx">    if (db.hasTable(ast.name)) {</span>
+<span class="d-ctx">      if (ast.ifNotExists) {</span>
+<span class="d-ctx">        return commandResult(&quot;Table &quot; + ast.name + &quot; already exists, skipped&quot;);</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      throw new SqlError(&quot;Table already exists: &quot; + ast.name, {</span>
+<span class="d-ctx">        code: &quot;SCHEMA_ERROR&quot;,</span>
+<span class="d-ctx">        hint: &quot;Use CREATE TABLE IF NOT EXISTS if you do not want an error.&quot;,</span>
+<span class="d-ctx">      });</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">    const schema = buildTableSchema(ast);</span>
+<span class="d-ctx">    db.createTable(schema);</span>
+<span class="d-ctx">    return commandResult(</span>
+<span class="d-ctx">      &quot;Created table &quot; + schema.name + &quot; (&quot; + schema.columns.length + &quot; columns)&quot;</span>
+<span class="d-ctx">    );</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  export function executeDropTable(db, ast) {</span>
+<span class="d-ctx">    if (!db.hasTable(ast.name)) {</span>
+<span class="d-ctx">      if (ast.ifExists) return commandResult(&quot;Table &quot; + ast.name + &quot; does not exist, skipped&quot;);</span>
+<span class="d-ctx">      throw new SqlError(&quot;Table does not exist: &quot; + ast.name, {</span>
+<span class="d-ctx">        code: &quot;SCHEMA_ERROR&quot;,</span>
+<span class="d-ctx">        hint: db.listTables().length &gt; 0 ? &quot;Existing tables: &quot; + db.listTables().join(&quot;, &quot;) : null,</span>
+<span class="d-ctx">      });</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">    db.dropTable(ast.name);</span>
+<span class="d-ctx">    return commandResult(&quot;Dropped table &quot; + ast.name);</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  export function executeInsert(db, ast) {</span>
+<span class="d-ctx">    const table = db.getTable(ast.table);</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    // Decide which columns to write: use an explicit column list if given, otherwise all columns (in schema order).</span>
+<span class="d-ctx">    const columns = ast.columns</span>
+<span class="d-ctx">      ? ast.columns.map((name) =&gt; {</span>
+<span class="d-ctx">          const column = findColumn(table.schema, name);</span>
+<span class="d-ctx">          if (!column) {</span>
+<span class="d-ctx">            throw new SqlError(&quot;Table &quot; + table.name + &quot; has no column &quot; + name, {</span>
+<span class="d-ctx">              code: &quot;SCHEMA_ERROR&quot;,</span>
+<span class="d-ctx">              hint: &quot;Available columns: &quot; + table.columns.map((column) =&gt; column.name).join(&quot;, &quot;),</span>
+<span class="d-ctx">            });</span>
+<span class="d-ctx">          }</span>
+<span class="d-ctx">          return column.name;</span>
+<span class="d-ctx">        })</span>
+<span class="d-ctx">      : table.columns.map((column) =&gt; column.name);</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    const seen = new Set();</span>
+<span class="d-ctx">    for (const name of columns) {</span>
+<span class="d-ctx">      const key = name.toLowerCase();</span>
+<span class="d-ctx">      if (seen.has(key)) {</span>
+<span class="d-ctx">        throw new SqlError(&quot;Duplicate column in INSERT column list: &quot; + name, { code: &quot;SYNTAX_ERROR&quot; });</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      seen.add(key);</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    let changes = 0;</span>
+<span class="d-ctx">    let lastInsertRowid = null;</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    for (const valueExprs of ast.rows) {</span>
+<span class="d-ctx">      if (valueExprs.length !== columns.length) {</span>
+<span class="d-ctx">        throw new SqlError(</span>
+<span class="d-ctx">          &quot;Column count and value count differ: &quot; + columns.length + &quot; columns, &quot; + valueExprs.length + &quot; values&quot;,</span>
+<span class="d-ctx">          { code: &quot;SYNTAX_ERROR&quot; }</span>
+<span class="d-ctx">        );</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      const values = {};</span>
+<span class="d-ctx">      for (let i = 0; i &lt; columns.length; i++) {</span>
+<span class="d-ctx">        // INSERT values cannot reference columns, so the source list is empty.</span>
+<span class="d-ctx">        values[columns[i]] = evaluate(valueExprs[i], [], {});</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      const row = table.insert(values);</span>
+<span class="d-ctx">      changes += 1;</span>
+<span class="d-ctx">      lastInsertRowid = row.__rowid;</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    return commandResult(&quot;Inserted &quot; + changes + &quot; rows into &quot; + table.name, {</span>
+<span class="d-ctx">      changes,</span>
+<span class="d-ctx">      lastInsertRowid,</span>
+<span class="d-ctx">    });</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  export function executeUpdate(db, ast) {</span>
+<span class="d-ctx">    const table = db.getTable(ast.table);</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    // Validate all SET columns up front so we do not fail halfway through.</span>
+<span class="d-ctx">    const columns = new Map();</span>
+<span class="d-ctx">    for (const assignment of ast.assignments) {</span>
+<span class="d-ctx">      const column = findColumn(table.schema, assignment.column);</span>
+<span class="d-ctx">      if (!column) {</span>
+<span class="d-ctx">        throw new SqlError(&quot;Table &quot; + table.name + &quot; has no column &quot; + assignment.column, {</span>
+<span class="d-ctx">          code: &quot;SCHEMA_ERROR&quot;,</span>
+<span class="d-ctx">          hint: &quot;Available columns: &quot; + table.columns.map((item) =&gt; item.name).join(&quot;, &quot;),</span>
+<span class="d-ctx">        });</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      const key = column.name.toLowerCase();</span>
+<span class="d-ctx">      if (columns.has(key)) {</span>
+<span class="d-ctx">        throw new SqlError(&quot;UPDATE assigns the same column twice: &quot; + column.name, { code: &quot;SYNTAX_ERROR&quot; });</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      columns.set(key, assignment);</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    const matches = table</span>
+<span class="d-ctx">      .all()</span>
+<span class="d-ctx">      .filter((values) =&gt; matchesWhere(ast.where, table, values));</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    let changes = 0;</span>
+<span class="d-ctx">    for (const values of matches) {</span>
+<span class="d-ctx">      // All changes to a row apply &quot;simultaneously&quot;: every expression sees the old values.</span>
+<span class="d-ctx">      const patch = {};</span>
+<span class="d-ctx">      for (const [key, assignment] of columns) {</span>
+<span class="d-ctx">        patch[assignment.column] = evaluate(assignment.value, sourcesFor(table, values), {});</span>
+<span class="d-ctx">        void key;</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      table.update(values.__rowid, patch);</span>
+<span class="d-ctx">      changes += 1;</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    return commandResult(&quot;Updated &quot; + changes + &quot; rows (&quot; + table.name + &quot;)&quot;, { changes });</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  export function executeDelete(db, ast) {</span>
+<span class="d-ctx">    const table = db.getTable(ast.table);</span>
+<span class="d-ctx">    const matches = table</span>
+<span class="d-ctx">      .all()</span>
+<span class="d-ctx">      .filter((values) =&gt; matchesWhere(ast.where, table, values));</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    let changes = 0;</span>
+<span class="d-ctx">    for (const values of matches) {</span>
+<span class="d-ctx">      if (table.delete(values.__rowid)) changes += 1;</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    return commandResult(&quot;Deleted &quot; + changes + &quot; rows (&quot; + table.name + &quot;)&quot;, { changes });</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  /** Wrap a row as the source list expected by expression evaluation. */</span>
+<span class="d-ctx">  function sourcesFor(table, values) {</span>
+<span class="d-ctx">    return [{ alias: table.name, table, values }];</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  /** An empty WHERE means &quot;all rows&quot;; NULL / UNKNOWN never match. */</span>
+<span class="d-ctx">  function matchesWhere(where, table, values) {</span>
+<span class="d-ctx">    if (!where) return true;</span>
+<span class="d-ctx">    return truthy(evaluate(where, sourcesFor(table, values), {}));</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+</code></pre></div>
+
+  <p>Finally, wire the new statements into the executor:</p>
+
+  <p class="diff__label">src/engine/executor.js: dispatch UPDATE / DELETE</p><div class="diff"><pre class="code code--diff"><code><span class="d-ctx">  /**</span>
+<span class="d-ctx">   * Executor: dispatch AST nodes to the corresponding executors</span>
+<span class="d-ctx">   *</span>
+<span class="d-ctx">   * Every statement node the parser produces maps to an execution function here.</span>
+<span class="d-ctx">   * This file is intentionally thin so it is obvious which statements are supported.</span>
+<span class="d-ctx">   */</span>
+<span class="d-ctx">  import { SqlError } from &quot;../errors.js&quot;;</span>
+<span class="d-ctx">  import { executeSelect } from &quot;./query.js&quot;;</span>
+<span class="d-ctx">  import {</span>
+<span class="d-ctx">    executeCreateTable,</span>
+<span class="d-ctx">    executeDelete,</span>
+<span class="d-ctx">    executeDropTable,</span>
+<span class="d-ctx">    executeInsert,</span>
+<span class="d-ctx">    executeUpdate,</span>
+<span class="d-ctx">  } from &quot;./write.js&quot;;</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  /**</span>
+<span class="d-ctx">   * Execute one statement and return a result object.</span>
+<span class="d-ctx">   *</span>
+<span class="d-ctx">   * Result for SELECT:</span>
+<span class="d-ctx">   *   { type: &quot;select&quot;, columns: [{name, type}], rows: [[...]], rowCount }</span>
+<span class="d-ctx">   *</span>
+<span class="d-ctx">   * Results for other statements:</span>
+<span class="d-ctx">   *   { type: &quot;command&quot;, message, changes, lastInsertRowid }</span>
+<span class="d-ctx">   *</span>
+<span class="d-ctx">   * @param {import(&quot;../database.js&quot;).Database} db</span>
+<span class="d-ctx">   * @param {object} ast</span>
+<span class="d-ctx">   */</span>
+<span class="d-ctx">  export function execute(db, ast) {</span>
+<span class="d-ctx">    switch (ast.type) {</span>
+<span class="d-ctx">      case &quot;select&quot;:</span>
+<span class="d-ctx">        return executeSelect(db, ast);</span>
+<span class="d-ctx">      case &quot;insert&quot;:</span>
+<span class="d-ctx">        return executeInsert(db, ast);</span>
+<span class="d-ctx">      case &quot;create_table&quot;:</span>
+<span class="d-ctx">        return executeCreateTable(db, ast);</span>
+<span class="d-ctx">      case &quot;drop_table&quot;:</span>
+<span class="d-ctx">        return executeDropTable(db, ast);</span>
+<span class="d-ctx">      case &quot;update&quot;:</span>
+<span class="d-ctx">        return executeUpdate(db, ast);</span>
+<span class="d-ctx">      case &quot;delete&quot;:</span>
+<span class="d-ctx">        return executeDelete(db, ast);</span>
+<span class="d-ctx">      case &quot;begin&quot;:</span>
+<span class="d-ctx">      case &quot;commit&quot;:</span>
+<span class="d-ctx">      case &quot;rollback&quot;:</span>
+<span class="d-ctx">        throw new SqlError(&quot;Transactions are not implemented yet (added in chapter 10)&quot;, { code: &quot;NOT_SUPPORTED&quot; });</span>
+<span class="d-ctx">      default:</span>
+<span class="d-ctx">        throw new SqlError(&quot;Cannot execute statement: &quot; + ast.type, { code: &quot;INTERNAL_ERROR&quot; });</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+</code></pre></div>
+
+  <h2 id="tests">Tests: don't let half-finished changes survive</h2>
+  <p>
+    Beyond basic updates and deletes, the tests check two things in particular: old-value semantics across
+    multiple assignments, and full-statement rollback when a constraint is violated.
+  </p>
+
+  <div class="file"><div class="file__head"><span class="file__name">tests/write.test.js</span><span class="file__meta">JavaScript · 69 lines · step 8</span></div><pre class="code"><code><span class="tk-kw">import</span> <span class="tk-ident">test</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:test&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-ident">assert</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:assert/strict&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">Database</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;../src/database.js&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-kw">function</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-fn">Database</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT, price REAL, stock INTEGER DEFAULT 0);&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;INSERT INTO books VALUES (1, 'JS', 100, 5), (2, 'DB', 200, 3), (3, 'OS', 150, 0);&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">db</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;UPDATE: targeted rows, expressions, old-value semantics&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-op">[</span><span class="tk-ident">result</span><span class="tk-op">]</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;UPDATE books SET price = price * 2 WHERE id = 1&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">changes</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT price FROM books WHERE id = 1&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-op">[</span><span class="tk-num">200</span><span class="tk-op">]</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+  <span class="tk-com">// every assignment in one UPDATE sees the old value</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db2</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db2</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;UPDATE books SET price = 1, stock = stock + 10 WHERE id = 2&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">db2</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT price, stock FROM books WHERE id = 2&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-op">[</span><span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-num">13</span><span class="tk-op">]</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;UPDATE without WHERE touches every row&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-op">[</span><span class="tk-ident">result</span><span class="tk-op">]</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;UPDATE books SET stock = 0&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">changes</span><span class="tk-op">,</span> <span class="tk-num">3</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT DISTINCT stock FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;UPDATE leaves rows that fail WHERE untouched&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-op">[</span><span class="tk-ident">result</span><span class="tk-op">]</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;UPDATE books SET stock = 99 WHERE price &gt; 120&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">changes</span><span class="tk-op">,</span> <span class="tk-num">2</span><span class="tk-op">)</span><span class="tk-op">;</span> <span class="tk-com">// both 200 and 150 exceed 120</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT id, stock FROM books ORDER BY id&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-op">[</span><span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-num">5</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-num">2</span><span class="tk-op">,</span> <span class="tk-num">99</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-num">3</span><span class="tk-op">,</span> <span class="tk-num">99</span><span class="tk-op">]</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;a constraint violation in UPDATE reverts the whole statement&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">throws</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;UPDATE books SET id = 1 WHERE id &gt;= 2&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">/</span><span class="tk-ident">PRIMARY</span> <span class="tk-ident">KEY</span><span class="tk-op">/</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT id FROM books ORDER BY id&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-op">[</span><span class="tk-num">1</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-num">2</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-num">3</span><span class="tk-op">]</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;UPDATE on a missing column or table&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">throws</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;UPDATE books SET nope = 1&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">/</span><span class="tk-ident">no</span> <span class="tk-ident">column</span><span class="tk-op">/</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">throws</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;UPDATE nope SET a = 1&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">/</span><span class="tk-ident">does</span> <span class="tk-ident">not</span> <span class="tk-ident">exist</span><span class="tk-op">/</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;DELETE: conditional and full delete&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-op">[</span><span class="tk-ident">result</span><span class="tk-op">]</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;DELETE FROM books WHERE price &gt;= 150&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">changes</span><span class="tk-op">,</span> <span class="tk-num">2</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT id FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-op">[</span><span class="tk-num">1</span><span class="tk-op">]</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">const</span> <span class="tk-op">[</span><span class="tk-ident">all</span><span class="tk-op">]</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;DELETE FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">all</span><span class="tk-op">.</span><span class="tk-ident">changes</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT * FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rowCount</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT COUNT(*) FROM books&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-num">0</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;rowids are not reused after DELETE&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-fn">Database</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;CREATE TABLE t (a TEXT)&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;INSERT INTO t VALUES ('x')&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;DELETE FROM t&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;INSERT INTO t VALUES ('y')&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT * FROM t&quot;</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">.</span><span class="tk-ident">length</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span></code></pre></div>
+
+  <div class="checkpoint">
+    <p class="checkpoint__title">Checkpoint — edits don't corrupt data</p>
+    <pre class="code"><code>node --test tests/write.test.js</code></pre>
+    <p class="checkpoint__expect">ℹ tests 7
+ℹ pass 7
+ℹ fail 0</p>
+  </div>
+
+  <h2 id="recap">Chapter recap</h2>
+  <ul>
+    <li>UPDATE computes the new row in full before writing it back; every assignment uses the old values.</li>
+    <li>DELETE filters by WHERE and removes rows one by one; rowids are never reused.</li>
+    <li>A statement is an atomic unit: on failure the whole statement rolls back, leaving no partial changes.</li>
+  </ul>
+
+  <div class="exercise">
+    <p class="exercise__title">Exercises</p>
+    <ol>
+      <li>Support <code>UPDATE ... LIMIT 10</code> (MySQL has it; standard SQL doesn't).</li>
+      <li>Make <code>DELETE</code> return the list of deleted rowids for easier debugging.</li>
+      <li>Compare "snapshot first" and "validate all rows before writing" as two approaches to atomicity. What are the tradeoffs?</li>
+    </ol>
+  </div>
+
+  <h2 id="vocab">Chapter glossary</h2>
+  <dl class="vocab">
+    <dt>Atomicity</dt><dd>An operation either fully succeeds or doesn't happen at all.</dd>
+    <dt>Rollback</dt><dd>Restoring data to its state before the operation.</dd>
+    <dt>Old-value semantics</dt><dd>Every computation in one UPDATE uses the pre-change row.</dd>
+  </dl>
+</article>
+
+
+      <footer class="chapter-foot site-chapter-foot">
+        <div class="chapter-foot__inner">
+          <p class="chapter-foot__label">Finished this chapter? Mark it complete and the progress stays in this browser.</p>
+          <button id="mark-complete" class="btn btn--complete" type="button"
+                  data-chapter="" aria-pressed="false">Mark chapter complete</button>
+        </div>
+        <nav class="pager" aria-label="Previous and next chapter">
+          <a class="pager-link pager-link--prev" href="../chapters/ch07.html"><span class="pager-link__meta">Previous chapter</span><span class="pager-link__title">Chapter 7 · Aggregates and grouping</span></a>
+          <a class="pager-link pager-link--next" href="../chapters/ch09.html"><span class="pager-link__meta">Next chapter</span><span class="pager-link__title">Chapter 9 · JOIN</span></a>
+        </nav>
+      </footer>
+    </div>
+    <aside id="page-toc" class="page-toc" aria-label="On this page"></aside>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <p><strong>Build a SQL Database Engine from Scratch</strong> — ten chapters that start with a single character and end with a database that persists, queries, and transacts.</p>
+        <p class="footer-mono">Zero dependencies · Node.js only · built by hand</p>
+      </div>
+      <div>
+        <p class="footer-mono"><a href="../playground.html">SQL Playground</a> · <a href="../reference.html">Syntax Reference</a> · <a href="../index.html">Home</a></p>
+        <p class="footer-mono">Switch between light and dark themes in the top-right corner.</p>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="search-overlay" role="dialog" aria-modal="true" aria-label="Search chapters" aria-hidden="true">
+    <div class="search-panel">
+      <div class="search-panel__head">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <input id="search-input" type="search" placeholder="Search chapter titles or summaries…"
+               autocomplete="off" spellcheck="false" aria-label="Search chapters">
+        <span class="search-panel__esc">Esc</span>
+      </div>
+      <ul class="search-results" id="search-results"></ul>
+      <div class="search-panel__foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> select</span>
+        <span><kbd>Enter</kbd> open</span>
+        <span><kbd>/</kbd> open search</span>
+        <span><kbd>[</kbd><kbd>]</kbd> previous / next chapter</span>
+      </div>
+    </div>
+  </div>
+
+  <noscript>
+    <p style="max-width:74ch;margin:1rem auto;padding:0 1rem;font-family:monospace;color:#6e675c">
+      The main content of this site is readable without JavaScript; search, theme switching, and progress tracking need it enabled.
+    </p>
+  </noscript>
+</body>
+</html>

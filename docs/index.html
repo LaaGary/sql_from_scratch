@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Build a SQL Database Engine from Scratch — ten hands-on chapters</title>
+  <meta name="description" content="A ten-chapter tutorial that starts with a single character and builds a SQL database engine in dependency-free Node.js: persistence, queries, and transactions included. Plus an in-browser playground and a complete syntax reference.">
+  <meta property="og:title" content="Build a SQL Database Engine from Scratch">
+  <meta property="og:description" content="Ten chapters, starting from one character, ending with a database that persists, queries, and transacts — zero dependencies, built by hand.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="en_US">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("sql-theme");
+        document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="assets/style.css">
+  <script defer src="assets/toc.js"></script>
+  <script defer src="assets/site.js"></script>
+</head>
+<body class="page page--home" data-page-kind="home" data-prev-url="" data-next-url="">
+
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <div id="reading-progress" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="site-header__left">
+      <button id="sidebar-toggle" class="icon-btn" type="button"
+              aria-label="Open chapter navigation" aria-controls="sidebar" aria-expanded="false">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <path d="M2 4h12M2 8h12M2 12h12" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <a class="brand" href="index.html">
+        <span class="brand__mark" aria-hidden="true">SQL</span>
+        <span class="brand__name">SQL from Scratch</span>
+      </a>
+      <span class="header-chapter">Home · Roadmap</span>
+    </div>
+    <div class="site-header__right">
+      <span class="header-progress" data-progress-label>0/10 complete</span>
+      <button id="search-toggle" class="icon-btn icon-btn--search" type="button"
+              aria-label="Search chapters" aria-haspopup="dialog">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <span class="icon-btn__label">Search</span>
+        <span class="kbd-hint">/</span>
+      </button>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
+        <svg class="theme-icon theme-icon--sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="8" cy="8" r="3"/>
+          <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" stroke-linecap="round"/>
+        </svg>
+        <svg class="theme-icon theme-icon--moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M13.4 9.6A5.8 5.8 0 0 1 6.4 2.6a5.8 5.8 0 1 0 7 7Z" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <aside class="sidebar" id="sidebar" aria-label="Chapter navigation">
+    <div class="sidebar__scroll">
+      <p class="sidebar__heading">Chapter Index</p>
+      <ol class="toc-list" id="home-nav">
+        <li><a class="toc-link" href="chapters/ch01.html"><span class="toc-num">01</span><span class="toc-title">Chapter 01</span></a></li>
+        <li><a class="toc-link" href="chapters/ch02.html"><span class="toc-num">02</span><span class="toc-title">Chapter 02</span></a></li>
+        <li><a class="toc-link" href="chapters/ch03.html"><span class="toc-num">03</span><span class="toc-title">Chapter 03</span></a></li>
+        <li><a class="toc-link" href="chapters/ch04.html"><span class="toc-num">04</span><span class="toc-title">Chapter 04</span></a></li>
+        <li><a class="toc-link" href="chapters/ch05.html"><span class="toc-num">05</span><span class="toc-title">Chapter 05</span></a></li>
+        <li><a class="toc-link" href="chapters/ch06.html"><span class="toc-num">06</span><span class="toc-title">Chapter 06</span></a></li>
+        <li><a class="toc-link" href="chapters/ch07.html"><span class="toc-num">07</span><span class="toc-title">Chapter 07</span></a></li>
+        <li><a class="toc-link" href="chapters/ch08.html"><span class="toc-num">08</span><span class="toc-title">Chapter 08</span></a></li>
+        <li><a class="toc-link" href="chapters/ch09.html"><span class="toc-num">09</span><span class="toc-title">Chapter 09</span></a></li>
+        <li><a class="toc-link" href="chapters/ch10.html"><span class="toc-num">10</span><span class="toc-title">Chapter 10</span></a></li>
+      </ol>
+      <p class="sidebar__heading">Tools</p>
+      <nav class="nav-list" aria-label="Tools">
+        <a class="toc-link" href="playground.html"><span class="toc-num">▸</span><span class="toc-title">SQL Playground</span></a>
+        <a class="toc-link" href="reference.html"><span class="toc-num">▸</span><span class="toc-title">Syntax Reference</span></a>
+      </nav>
+    </div>
+    <div class="sidebar__foot">
+      <a href="index.html"><span>Home</span><span>⌂</span></a>
+      <a href="playground.html"><span>Playground</span><span>⟩</span></a>
+      <a href="reference.html"><span>Reference</span><span>⌗</span></a>
+      <p class="sidebar__version">SQL engine tutorial · 0.1<br>Zero dependencies · works offline</p>
+    </div>
+  </aside>
+  <div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
+
+  <main id="main" class="layout">
+
+    <section class="hero">
+      <p class="hero__eyebrow">node bin/sql.js demo.db</p>
+      <h1>Build a SQL<br>Database Engine from Scratch</h1>
+      <p class="hero__sub">Ten chapters that start with a single character and end with a database that persists, queries, and transacts — zero dependencies, written by hand.</p>
+      <div class="hero__actions">
+        <a class="btn btn--primary" href="chapters/ch01.html">Start chapter 1 →</a>
+        <a class="btn btn--ghost" href="playground.html">Try it in the browser</a>
+      </div>
+
+      <div class="hero__term" aria-hidden="true">
+        <div class="hero__term-bar"><i></i><i></i><i></i><span>demo.db — sql shell</span></div>
+        <pre><span class="prompt">sql&gt;</span> CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT);
+<span class="out">ok · table books created</span>
+<span class="prompt">sql&gt;</span> INSERT INTO books VALUES (1, 'SQL Antipatterns', 520);
+<span class="out">ok · 1 row inserted</span>
+<span class="prompt">sql&gt;</span> SELECT title, price FROM books WHERE price &lt; 600;
+<span class="out">┌──────────────────┬───────┐
+│ title            │ price │
+├──────────────────┼───────┤
+│ SQL Antipatterns │   520 │
+└──────────────────┴───────┘
+1 row · 0.4 ms</span></pre>
+      </div>
+    </section>
+
+    <section class="section" id="why">
+      <div class="section__head">
+        <p class="section__kicker">01 — Why</p>
+        <h2 class="section__title">Why build a database yourself?</h2>
+      </div>
+      <div class="prose" style="max-width:74ch">
+        <p>You use databases every day, yet you rarely get to open one up. Courses teach normalization and ACID; tools hand you connection strings and ORMs. The long middle — how rows actually reach the disk, how a query gets decomposed, how a transaction avoids doing only half its work — is usually left blank.</p>
+        <p>Write one yourself and those nouns turn into concrete code. You will see why a row cannot grow without limit, why an index speeds up reads and slows down writes, and why a database can still come back consistent after a crash. Those intuitions last longer than any definition you can memorize.</p>
+        <p>The barrier is lower than it looks: a computer with Node.js, a text editor, and ten chapters. No third-party packages, no database to install, no cloud service. You decide where every byte comes from and where it goes.</p>
+        <p>By the end you have a working database: open a file, create tables, insert, query, and run transactions, all through a command-line interface. It is not a production replacement, but it is a database you genuinely understand.</p>
+      </div>
+    </section>
+
+    <section class="section" id="outcome">
+      <div class="section__head">
+        <p class="section__kicker">02 — What you build</p>
+        <h2 class="section__title">What you will build</h2>
+        <p class="section__lead">Ten chapters end with a dependency-free SQL engine and a command-line tool that drives it. Here is what it supports.</p>
+      </div>
+      <ul class="capability-list">
+        <li>SELECT<span class="cap-note">projection and aliases</span></li>
+        <li>WHERE<span class="cap-note">comparisons and boolean logic</span></li>
+        <li>ORDER BY<span class="cap-note">multi-column sorting</span></li>
+        <li>GROUP BY<span class="cap-note">aggregate functions</span></li>
+        <li>JOIN<span class="cap-note">inner joins</span></li>
+        <li>INSERT<span class="cap-note">writes and constraints</span></li>
+        <li>UPDATE<span class="cap-note">conditional updates</span></li>
+        <li>DELETE<span class="cap-note">conditional deletes</span></li>
+        <li>Indexes<span class="cap-note">optional topic</span></li>
+        <li>Page storage<span class="cap-note">fixed-size pages</span></li>
+        <li>Transaction journal<span class="cap-note">recovery after restart</span></li>
+        <li>CLI<span class="cap-note">interactive shell</span></li>
+      </ul>
+    </section>
+
+    <section class="section" id="roadmap">
+      <div class="section__head">
+        <p class="section__kicker">03 — Roadmap</p>
+        <h2 class="section__title">Ten-chapter roadmap</h2>
+        <p class="section__lead">Start with bytes and pages, then build up layer by layer: storage, parsing, execution, transactions, and finally a command-line tool. Every chapter ends with a runnable checkpoint.</p>
+      </div>
+
+      <ol class="roadmap" id="roadmap-skeleton" aria-hidden="true">
+        <li><div class="roadmap__skeleton"></div></li>
+        <li><div class="roadmap__skeleton"></div></li>
+        <li><div class="roadmap__skeleton"></div></li>
+        <li><div class="roadmap__skeleton"></div></li>
+        <li><div class="roadmap__skeleton"></div></li>
+        <li><div class="roadmap__skeleton"></div></li>
+      </ol>
+
+      <ol class="roadmap" id="roadmap-list" hidden>
+        <li class="roadmap__item" data-chapter="1"><a class="roadmap__card" href="chapters/ch01.html"><span class="roadmap__num">01</span><span class="roadmap__title">Chapter 01</span><span class="roadmap__summary">Generated by the build; titles and summaries appear here once assets/toc.js loads.</span><span class="roadmap__meta">~25 min</span></a></li>
+        <li class="roadmap__item" data-chapter="2"><a class="roadmap__card" href="chapters/ch02.html"><span class="roadmap__num">02</span><span class="roadmap__title">Chapter 02</span><span class="roadmap__summary">Generated by the build; titles and summaries appear here once assets/toc.js loads.</span><span class="roadmap__meta">~45 min</span></a></li>
+        <li class="roadmap__item" data-chapter="3"><a class="roadmap__card" href="chapters/ch03.html"><span class="roadmap__num">03</span><span class="roadmap__title">Chapter 03</span><span class="roadmap__summary">Generated by the build; titles and summaries appear here once assets/toc.js loads.</span><span class="roadmap__meta">~60 min</span></a></li>
+        <li class="roadmap__item" data-chapter="4"><a class="roadmap__card" href="chapters/ch04.html"><span class="roadmap__num">04</span><span class="roadmap__title">Chapter 04</span><span class="roadmap__summary">Generated by the build; titles and summaries appear here once assets/toc.js loads.</span><span class="roadmap__meta">~40 min</span></a></li>
+        <li class="roadmap__item" data-chapter="5"><a class="roadmap__card" href="chapters/ch05.html"><span class="roadmap__num">05</span><span class="roadmap__title">Chapter 05</span><span class="roadmap__summary">Generated by the build; titles and summaries appear here once assets/toc.js loads.</span><span class="roadmap__meta">~55 min</span></a></li>
+        <li class="roadmap__item" data-chapter="6"><a class="roadmap__card" href="chapters/ch06.html"><span class="roadmap__num">06</span><span class="roadmap__title">Chapter 06</span><span class="roadmap__summary">Generated by the build; titles and summaries appear here once assets/toc.js loads.</span><span class="roadmap__meta">~70 min</span></a></li>
+        <li class="roadmap__item" data-chapter="7"><a class="roadmap__card" href="chapters/ch07.html"><span class="roadmap__num">07</span><span class="roadmap__title">Chapter 07</span><span class="roadmap__summary">Generated by the build; titles and summaries appear here once assets/toc.js loads.</span><span class="roadmap__meta">~50 min</span></a></li>
+        <li class="roadmap__item" data-chapter="8"><a class="roadmap__card" href="chapters/ch08.html"><span class="roadmap__num">08</span><span class="roadmap__title">Chapter 08</span><span class="roadmap__summary">Generated by the build; titles and summaries appear here once assets/toc.js loads.</span><span class="roadmap__meta">~40 min</span></a></li>
+        <li class="roadmap__item" data-chapter="9"><a class="roadmap__card" href="chapters/ch09.html"><span class="roadmap__num">09</span><span class="roadmap__title">Chapter 09</span><span class="roadmap__summary">Generated by the build; titles and summaries appear here once assets/toc.js loads.</span><span class="roadmap__meta">~45 min</span></a></li>
+        <li class="roadmap__item" data-chapter="10"><a class="roadmap__card" href="chapters/ch10.html"><span class="roadmap__num">10</span><span class="roadmap__title">Chapter 10</span><span class="roadmap__summary">Generated by the build; titles and summaries appear here once assets/toc.js loads.</span><span class="roadmap__meta">~80 min</span></a></li>
+      </ol>
+      <noscript>
+        <style>#roadmap-skeleton{display:none!important}#roadmap-list{display:grid!important}#roadmap-list[hidden]{display:grid!important}</style>
+        <p class="section__lead" style="margin-top:12px">JavaScript is disabled, so the roadmap is shown as a static list.</p>
+      </noscript>
+    </section>
+
+    <section class="section" id="quickstart">
+      <div class="section__head">
+        <p class="section__kicker">04 — Quickstart</p>
+        <h2 class="section__title">Quickstart</h2>
+        <p class="section__lead">One requirement: Node.js 18 or newer. No npm install and no database server.</p>
+      </div>
+      <div class="quickstart">
+        <div class="quickstart__col">
+          <h3>Run it</h3>
+          <p>Open a terminal, enter the project folder, create a database file, and start the shell.</p>
+          <pre><span class="c"># Requires Node.js 18+</span>
+cd SQL
+node bin/sql.js demo.db
+
+<span class="c"># interactive mode</span>
+sql&gt; SELECT 1 + 1;
+2</pre>
+        </div>
+        <div class="quickstart__col">
+          <h3>Read it</h3>
+          <p>The site is static files: double-click <code>docs/index.html</code> to read, or start a local server to use the playground.</p>
+          <pre><span class="c"># dependency-free static server</span>
+node tools/serve.mjs
+
+<span class="c"># → http://localhost:8080/docs/</span></pre>
+          <p class="qs-note">The playground needs <code>docs/assets/sql-engine.js</code>; it appears after you run the build.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="structure">
+      <div class="section__head">
+        <p class="section__kicker">05 — Structure</p>
+        <h2 class="section__title">Project structure</h2>
+        <p class="section__lead">The engine, the CLI, the tutorial content, and the website stay separate and independent.</p>
+      </div>
+      <pre class="tree"><span class="t-dir">SQL/</span>
+├── <span class="t-dir">bin/</span>              <span class="t-com"># command-line entry point</span>
+│   └── <span class="t-file">sql.js</span>        <span class="t-com"># node bin/sql.js demo.db</span>
+├── <span class="t-dir">src/</span>              <span class="t-com"># engine: storage, parsing, execution, transactions</span>
+├── <span class="t-dir">tests/</span>            <span class="t-com"># acceptance tests for every chapter</span>
+├── <span class="t-dir">steps/</span>            <span class="t-com"># progressive snapshots, one per chapter</span>
+├── <span class="t-dir">tools/</span>
+│   ├── <span class="t-file">build-docs.mjs</span> <span class="t-com"># content → HTML, plus toc.js</span>
+│   └── <span class="t-file">serve.mjs</span>      <span class="t-com"># dependency-free static server</span>
+└── <span class="t-dir">docs/</span>             <span class="t-com"># this website</span>
+    ├── <span class="t-file">index.html</span>
+    ├── <span class="t-file">playground.html</span>
+    ├── <span class="t-dir">content/</span>       <span class="t-com"># chapter sources</span>
+    ├── <span class="t-dir">chapters/</span>      <span class="t-com"># generated chapter pages</span>
+    └── <span class="t-dir">assets/</span>        <span class="t-com"># style.css, site.js, playground</span></pre>
+    </section>
+
+    <section class="section" id="who">
+      <div class="section__head">
+        <p class="section__kicker">06 — Audience</p>
+        <h2 class="section__title">Who this tutorial is for</h2>
+      </div>
+      <div class="feature-grid">
+        <div class="feature">
+          <span class="feature__num">01 / Some programming experience</span>
+          <h3>Variables, functions, and loops are enough</h3>
+          <p>No database experience needed, and no C or operating-systems background. Every step starts from the smallest runnable program.</p>
+        </div>
+        <div class="feature">
+          <span class="feature__num">02 / Curious about the black box</span>
+          <h3>Interested in how it actually works underneath</h3>
+          <p>You will work directly with bytes, pages, cursors, the AST, and the transaction journal instead of calling a ready-made API.</p>
+        </div>
+        <div class="feature">
+          <span class="feature__num">03 / Hands-on learner</span>
+          <h3>Every chapter has a verifiable checkpoint</h3>
+          <p>Each concept ships with runnable code and expected output; if it runs and matches, the chapter is done.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <p><strong>Build a SQL Database Engine from Scratch</strong> — ten chapters that start with a single character and end with a database that persists, queries, and transacts.</p>
+        <p class="footer-mono">Zero dependencies · Node.js only · built by hand · readable offline</p>
+      </div>
+      <div>
+        <p class="footer-mono"><a href="playground.html">SQL Playground</a> · <a href="reference.html">Syntax Reference</a> · <a href="chapters/ch01.html">Chapter 1</a></p>
+        <p class="footer-mono">Switch between light and dark themes in the top-right corner.</p>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="search-overlay" role="dialog" aria-modal="true" aria-label="Search chapters" aria-hidden="true">
+    <div class="search-panel">
+      <div class="search-panel__head">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <input id="search-input" type="search" placeholder="Search chapter titles or summaries…"
+               autocomplete="off" spellcheck="false" aria-label="Search chapters">
+        <span class="search-panel__esc">Esc</span>
+      </div>
+      <ul class="search-results" id="search-results"></ul>
+      <div class="search-panel__foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> select</span>
+        <span><kbd>Enter</kbd> open</span>
+        <span><kbd>/</kbd> open search</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

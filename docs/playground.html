@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SQL Playground — Build a SQL Database Engine from Scratch</title>
+  <meta name="description" content="Try the SQL engine from this tutorial right in your browser: create tables, insert rows, run SELECT, GROUP BY, and JOIN.">
+  <meta property="og:title" content="SQL Playground">
+  <meta property="og:description" content="Try the SQL engine you build in this tutorial, right in the browser.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="en_US">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("sql-theme");
+        document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="assets/style.css">
+  <script defer src="assets/toc.js"></script>
+  <script defer src="assets/site.js"></script>
+  <script defer src="assets/sql-engine.js"></script>
+  <script defer src="assets/playground.js"></script>
+</head>
+<body class="page page--playground" data-page-kind="playground" data-prev-url="" data-next-url="">
+
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="site-header__left">
+      <a class="brand" href="index.html">
+        <span class="brand__mark" aria-hidden="true">SQL</span>
+        <span class="brand__name">SQL from Scratch</span>
+      </a>
+      <span class="header-chapter">SQL Playground</span>
+    </div>
+    <div class="site-header__right">
+      <span class="header-progress" data-progress-label>0/10 complete</span>
+      <button id="search-toggle" class="icon-btn icon-btn--search" type="button"
+              aria-label="Search chapters" aria-haspopup="dialog">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <span class="icon-btn__label">Search</span>
+        <span class="kbd-hint">/</span>
+      </button>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
+        <svg class="theme-icon theme-icon--sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="8" cy="8" r="3"/>
+          <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" stroke-linecap="round"/>
+        </svg>
+        <svg class="theme-icon theme-icon--moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M13.4 9.6A5.8 5.8 0 0 1 6.4 2.6a5.8 5.8 0 1 0 7 7Z" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="main" class="layout">
+    <div class="pg-head">
+      <div>
+        <p class="pg-kicker">Playground / runs in your browser</p>
+        <h1>SQL Playground</h1>
+        <p>This runs the engine built in the course, not SQLite. Create tables, insert rows, query, aggregate, and join — the results appear immediately.</p>
+      </div>
+      <div class="pg-samples" aria-label="Samples">
+        <button class="pg-sample" type="button" data-sample="books">books sample</button>
+        <button class="pg-sample" type="button" data-sample="groupby">GROUP BY aggregate</button>
+        <button class="pg-sample" type="button" data-sample="join">JOIN sample</button>
+      </div>
+    </div>
+
+    <p class="pg-warn" id="pg-engine-warn" hidden>Engine bundle not generated yet: run <code>node tools/build-docs.mjs</code> then reload and <code>assets/sql-engine.js</code> will appear here. You can still read and write SQL in the editor.</p>
+
+    <div class="pg-layout">
+      <section class="pg-panel" aria-label="SQL editor">
+        <div class="pg-panel__head">
+          <span class="pg-panel__title">Editor</span>
+          <span class="pg-panel__spacer"></span>
+          <span class="pg-panel__title" id="pg-engine-state">engine: …</span>
+        </div>
+        <div class="pg-editor-wrap">
+          <textarea id="pg-editor" spellcheck="false" autocomplete="off" autocapitalize="off"
+                    aria-label="SQL editor" placeholder="-- Type SQL here, press Ctrl/Cmd + Enter to run"></textarea>
+        </div>
+        <div class="pg-toolbar">
+          <button id="pg-run" class="btn btn--primary btn--sm" type="button">Run ▸</button>
+          <button id="pg-clear" class="btn btn--sm" type="button">Clear</button>
+          <span class="pg-hint">Ctrl / Cmd + Enter to run</span>
+        </div>
+        <div class="pg-status" id="pg-status" role="status" aria-live="polite">
+          <span>Ready</span>
+        </div>
+      </section>
+
+      <section class="pg-panel" aria-label="Results">
+        <div class="pg-panel__head">
+          <span class="pg-panel__title">Results</span>
+          <span class="pg-panel__spacer"></span>
+          <button id="pg-clear-results" class="btn btn--sm" type="button">Clear results</button>
+        </div>
+        <div class="pg-results" id="pg-results" aria-live="polite">
+          <p class="pg-empty">Run SQL on the left and the results will appear here.<br>SELECT shows a table; other statements show the number of affected rows.</p>
+        </div>
+        <div class="pg-history">
+          <div class="pg-history__head">History in this session</div>
+          <ul class="pg-history__list" id="pg-history">
+            <li class="pg-history__empty">No history yet</li>
+          </ul>
+        </div>
+      </section>
+    </div>
+
+    <section class="pg-tables" aria-label="Tables in this session">
+      <div class="pg-tables__head">
+        <span>Tables in this session</span>
+        <span class="pg-panel__spacer"></span>
+        <span id="pg-tables-count">0 tables</span>
+      </div>
+      <div class="pg-tables__body" id="pg-tables-body">
+        <span class="pg-chip">No tables yet</span>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <p><strong>SQL Playground</strong> — runs the engine implemented in this course. Data lives only in this tab's memory and is cleared when you reload.</p>
+        <p class="footer-mono">Zero dependencies · built by hand · works offline</p>
+      </div>
+      <div>
+        <p class="footer-mono"><a href="index.html">Home</a> · <a href="reference.html">Syntax Reference</a> · <a href="chapters/ch01.html">Chapter 1</a></p>
+        <p class="footer-mono">Switch between light and dark themes in the top-right corner.</p>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="search-overlay" role="dialog" aria-modal="true" aria-label="Search chapters" aria-hidden="true">
+    <div class="search-panel">
+      <div class="search-panel__head">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <input id="search-input" type="search" placeholder="Search chapter titles or summaries…"
+               autocomplete="off" spellcheck="false" aria-label="Search chapters">
+        <span class="search-panel__esc">Esc</span>
+      </div>
+      <ul class="search-results" id="search-results"></ul>
+      <div class="search-panel__foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> select</span>
+        <span><kbd>Enter</kbd> open</span>
+        <span><kbd>/</kbd> open search</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

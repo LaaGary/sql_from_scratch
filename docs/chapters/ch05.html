@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chapter 5 · Storage layer — Building an SQL database engine from scratch</title>
+  <meta name="description" content="Build the table schema, row model, and constraint checks, plus a swappable storage backend interface.">
+  <meta property="og:title" content="Chapter 5 · Storage layer — Building an SQL database engine from scratch">
+  <meta property="og:description" content="Build the table schema, row model, and constraint checks, plus a swappable storage backend interface.">
+  <meta property="og:type" content="article">
+  <meta property="og:locale" content="en_US">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("sql-theme");
+        document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script defer src="../assets/toc.js"></script>
+  <script defer src="../assets/site.js"></script>
+</head>
+<body class="page page--chapter" data-page-kind="chapter"
+      data-prev-url="../chapters/ch04.html" data-next-url="../chapters/ch06.html">
+
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <div id="reading-progress" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="site-header__left">
+      <button id="sidebar-toggle" class="icon-btn" type="button"
+              aria-label="Open chapter navigation" aria-controls="sidebar" aria-expanded="false">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <path d="M2 4h12M2 8h12M2 12h12" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <a class="brand" href="../index.html">
+        <span class="brand__mark" aria-hidden="true">SQL</span>
+        <span class="brand__name">SQL from Scratch</span>
+      </a>
+      <span class="header-chapter">Chapter 5 · Storage layer</span>
+    </div>
+    <div class="site-header__right">
+      <span class="header-progress" data-progress-label>0/10 complete</span>
+      <button id="search-toggle" class="icon-btn icon-btn--search" type="button"
+              aria-label="Search chapters" aria-haspopup="dialog">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <span class="icon-btn__label">Search</span>
+        <span class="kbd-hint">/</span>
+      </button>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
+        <svg class="theme-icon theme-icon--sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="8" cy="8" r="3"/>
+          <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" stroke-linecap="round"/>
+        </svg>
+        <svg class="theme-icon theme-icon--moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M13.4 9.6A5.8 5.8 0 0 1 6.4 2.6a5.8 5.8 0 1 0 7 7Z" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <aside class="sidebar" id="sidebar" aria-label="Chapter navigation">
+    <div class="sidebar__scroll">
+      <p class="sidebar__heading">Chapter Index</p>
+      <ol class="toc-list"><li class="toc-item"><a class="toc-link" href="../chapters/ch01.html"><span class="toc-num">01</span><span class="toc-title">Orientation and skeleton</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch02.html"><span class="toc-num">02</span><span class="toc-title">Lexing</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch03.html"><span class="toc-num">03</span><span class="toc-title">Parsing</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch04.html"><span class="toc-num">04</span><span class="toc-title">Values and types</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch05.html"><span class="toc-num">05</span><span class="toc-title">Storage layer</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch06.html"><span class="toc-num">06</span><span class="toc-title">SELECT pipeline</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch07.html"><span class="toc-num">07</span><span class="toc-title">Aggregates and grouping</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch08.html"><span class="toc-num">08</span><span class="toc-title">Update and delete</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch09.html"><span class="toc-num">09</span><span class="toc-title">JOIN</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch10.html"><span class="toc-num">10</span><span class="toc-title">Persistence and transactions</span></a></li></ol>
+      <p class="sidebar__heading">Tools</p>
+      <nav class="nav-list" aria-label="Tools">
+        <a class="toc-link" href="../playground.html"><span class="toc-num">▸</span><span class="toc-title">SQL Playground</span></a>
+        <a class="toc-link" href="../reference.html"><span class="toc-num">▸</span><span class="toc-title">Syntax Reference</span></a>
+        <a class="toc-link" href="../index.html"><span class="toc-num">▸</span><span class="toc-title">Home &amp; Roadmap</span></a>
+      </nav>
+    </div>
+    <div class="sidebar__foot">
+      <a href="../index.html"><span>Home</span><span>⌂</span></a>
+      <a href="../playground.html"><span>Playground</span><span>⟩</span></a>
+      <a href="../reference.html"><span>Reference</span><span>⌗</span></a>
+      <p class="sidebar__version">SQL engine tutorial · 0.1<br>Zero dependencies · works offline</p>
+    </div>
+  </aside>
+  <div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
+
+  <main id="main" class="layout">
+    <div class="content-column">
+      <aside class="chapter-meta">
+  <h2 class="chapter-meta__title">Chapter info</h2>
+  <ul class="chapter-meta__list">
+    <li><strong>Estimated time</strong> 55 minutes</li>
+    <li><strong>Difficulty</strong> ★★★☆☆</li>
+    <li><strong>What you'll learn</strong> Schema, rowid, constraint checking, swappable storage interfaces</li>
+    <li><strong>What you'll build</strong> <code>src/schema.js</code>, <code>src/table.js</code>, <code>src/storage/memory.js</code>, <code>src/database.js</code></li>
+  </ul>
+</aside>
+
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Chapter 05 / Storage layer</p>
+    <h1>Where data lives: schema, table, and storage backend</h1>
+    <p class="chapter-lead">
+      The parser turns <code>CREATE TABLE</code> into an AST, but the AST only records what the user wrote.
+      This chapter turns it into the structures the runtime actually uses: a table's columns, constraints, and rows.
+      We also abstract "where the data lives" behind an interface, so the same engine can run in memory or on disk.
+    </p>
+  </header>
+
+  <h2 id="schema">Schema: turning the AST into rules</h2>
+  <p>
+    <code>buildTableSchema()</code> takes the AST of a <code>CREATE TABLE</code> and produces a
+    <strong>schema</strong>. It does more than copy columns — it rejects obvious errors up front:
+  </p>
+  <ul>
+    <li>Duplicate column names (case-insensitive).</li>
+    <li><code>PRIMARY KEY</code> declared twice.</li>
+    <li>A table-level constraint points at a column that doesn't exist.</li>
+    <li><code>DEFAULT</code> isn't a constant (we only support constant defaults).</li>
+  </ul>
+  <p>Each column looks like this:</p>
+  <pre class="code"><code>{
+  name: "price",
+  type: "REAL",
+  affinity: "REAL",       // decided by affinityOf in values.js
+  notNull: false,
+  primaryKey: false,
+  unique: false,
+  defaultExpr: null,
+  defaultValue: 0         // precomputed constant
+}</code></pre>
+  <p>
+    Why keep <code>defaultExpr</code> and also compute a <code>defaultValue</code>?
+    The first is "what the user wrote" (useful for debugging and for .schema); the second is "the value
+    actually used". This "source form + resolved form" pattern is common in compilers.
+  </p>
+
+  <div class="file"><div class="file__head"><span class="file__name">src/schema.js</span><span class="file__meta">JavaScript · 143 lines · step 5</span></div><pre class="code"><code><span class="tk-com">/**
+ * Table Schema
+ *
+ * The parser only reports what CREATE TABLE wrote; this file turns that into
+ * the structure used at runtime and rejects obvious mistakes up front:
+ *
+ *   - duplicate column names (case-insensitive)
+ *   - PRIMARY KEY declared twice
+ *   - table-level constraint referencing a missing column
+ *   - DEFAULT is not a constant (the teaching version only supports constant defaults)
+ *
+ * The resulting schema is a plain object that can be JSON-serialized and stored in a file (used in chapter 10).
+ */</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">SqlError</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;./errors.js&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">affinityOf</span><span class="tk-op">,</span> <span class="tk-ident">normalizeValue</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;./values.js&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-com">/**
+ * Convert a CREATE TABLE AST into a schema.
+ * @param {object} ast the create_table node produced by the parser
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">buildTableSchema</span><span class="tk-op">(</span><span class="tk-ident">ast</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">seen</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-type">Set</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">columns</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">def</span> <span class="tk-kw">of</span> <span class="tk-ident">ast</span><span class="tk-op">.</span><span class="tk-ident">columns</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">key</span> <span class="tk-op">=</span> <span class="tk-ident">def</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">seen</span><span class="tk-op">.</span><span class="tk-fn">has</span><span class="tk-op">(</span><span class="tk-ident">key</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">&quot;Duplicate column name: &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">def</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">,</span> <span class="tk-op">{</span> <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;SCHEMA_ERROR&quot;</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-ident">seen</span><span class="tk-op">.</span><span class="tk-fn">add</span><span class="tk-op">(</span><span class="tk-ident">key</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+    <span class="tk-kw">const</span> <span class="tk-ident">affinity</span> <span class="tk-op">=</span> <span class="tk-fn">affinityOf</span><span class="tk-op">(</span><span class="tk-ident">def</span><span class="tk-op">.</span><span class="tk-ident">type</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">column</span> <span class="tk-op">=</span> <span class="tk-op">{</span>
+      <span class="tk-ident">name</span><span class="tk-op">:</span> <span class="tk-ident">def</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">,</span>
+      <span class="tk-ident">type</span><span class="tk-op">:</span> <span class="tk-ident">def</span><span class="tk-op">.</span><span class="tk-ident">type</span><span class="tk-op">,</span>
+      <span class="tk-ident">affinity</span><span class="tk-op">,</span>
+      <span class="tk-ident">notNull</span><span class="tk-op">:</span> <span class="tk-type">Boolean</span><span class="tk-op">(</span><span class="tk-ident">def</span><span class="tk-op">.</span><span class="tk-ident">notNull</span><span class="tk-op">)</span><span class="tk-op">,</span>
+      <span class="tk-ident">primaryKey</span><span class="tk-op">:</span> <span class="tk-type">Boolean</span><span class="tk-op">(</span><span class="tk-ident">def</span><span class="tk-op">.</span><span class="tk-ident">primaryKey</span><span class="tk-op">)</span><span class="tk-op">,</span>
+      <span class="tk-ident">unique</span><span class="tk-op">:</span> <span class="tk-type">Boolean</span><span class="tk-op">(</span><span class="tk-ident">def</span><span class="tk-op">.</span><span class="tk-ident">unique</span><span class="tk-op">)</span><span class="tk-op">,</span>
+      <span class="tk-ident">defaultExpr</span><span class="tk-op">:</span> <span class="tk-ident">def</span><span class="tk-op">.</span><span class="tk-ident">defaultExpr</span><span class="tk-op">,</span>
+      <span class="tk-ident">defaultValue</span><span class="tk-op">:</span> <span class="tk-fn">defaultValueOf</span><span class="tk-op">(</span><span class="tk-ident">def</span><span class="tk-op">)</span><span class="tk-op">,</span>
+    <span class="tk-op">}</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">primaryKey</span><span class="tk-op">)</span> <span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">notNull</span> <span class="tk-op">=</span> <span class="tk-kw">true</span><span class="tk-op">;</span> <span class="tk-com">// PRIMARY KEY implies NOT NULL</span>
+    <span class="tk-ident">columns</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-ident">column</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-kw">const</span> <span class="tk-ident">primaryKey</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">uniques</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+
+  <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">column</span> <span class="tk-kw">of</span> <span class="tk-ident">columns</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">primaryKey</span><span class="tk-op">)</span> <span class="tk-ident">primaryKey</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">unique</span><span class="tk-op">)</span> <span class="tk-ident">uniques</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-op">[</span><span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">constraint</span> <span class="tk-kw">of</span> <span class="tk-ident">ast</span><span class="tk-op">.</span><span class="tk-ident">tableConstraints</span> <span class="tk-op">?</span><span class="tk-op">?</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">name</span> <span class="tk-kw">of</span> <span class="tk-ident">constraint</span><span class="tk-op">.</span><span class="tk-ident">columns</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">columns</span><span class="tk-op">.</span><span class="tk-fn">some</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">column</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">name</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">&quot;Constraint references a missing column: &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">name</span><span class="tk-op">,</span> <span class="tk-op">{</span> <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;SCHEMA_ERROR&quot;</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">constraint</span><span class="tk-op">.</span><span class="tk-ident">kind</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;primary&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">primaryKey</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">&gt;</span> <span class="tk-num">0</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">&quot;PRIMARY KEY may only be declared once&quot;</span><span class="tk-op">,</span> <span class="tk-op">{</span> <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;SCHEMA_ERROR&quot;</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+      <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">name</span> <span class="tk-kw">of</span> <span class="tk-ident">constraint</span><span class="tk-op">.</span><span class="tk-ident">columns</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-kw">const</span> <span class="tk-ident">column</span> <span class="tk-op">=</span> <span class="tk-ident">columns</span><span class="tk-op">.</span><span class="tk-fn">find</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">c</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">c</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">name</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">notNull</span> <span class="tk-op">=</span> <span class="tk-kw">true</span><span class="tk-op">;</span>
+        <span class="tk-ident">primaryKey</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+    <span class="tk-op">}</span> <span class="tk-kw">else</span> <span class="tk-op">{</span>
+      <span class="tk-ident">uniques</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-ident">constraint</span><span class="tk-op">.</span><span class="tk-ident">columns</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">name</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-fn">canonicalName</span><span class="tk-op">(</span><span class="tk-ident">columns</span><span class="tk-op">,</span> <span class="tk-ident">name</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-kw">return</span> <span class="tk-op">{</span>
+    <span class="tk-ident">name</span><span class="tk-op">:</span> <span class="tk-ident">ast</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">,</span>
+    <span class="tk-ident">columns</span><span class="tk-op">,</span>
+    <span class="tk-ident">primaryKey</span><span class="tk-op">,</span>
+    <span class="tk-ident">uniques</span><span class="tk-op">,</span>
+  <span class="tk-op">}</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-kw">function</span> <span class="tk-fn">defaultValueOf</span><span class="tk-op">(</span><span class="tk-ident">def</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">def</span><span class="tk-op">.</span><span class="tk-ident">defaultExpr</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-fn">evaluateConstant</span><span class="tk-op">(</span><span class="tk-ident">def</span><span class="tk-op">.</span><span class="tk-ident">defaultExpr</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Evaluate the constant expression after DEFAULT; only literals and signs are accepted. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">evaluateConstant</span><span class="tk-op">(</span><span class="tk-ident">expr</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">expr</span><span class="tk-op">.</span><span class="tk-ident">type</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;literal&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">return</span> <span class="tk-fn">normalizeValue</span><span class="tk-op">(</span><span class="tk-ident">expr</span><span class="tk-op">.</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">expr</span><span class="tk-op">.</span><span class="tk-ident">type</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;unary&quot;</span> <span class="tk-op">&amp;</span><span class="tk-op">&amp;</span> <span class="tk-op">(</span><span class="tk-ident">expr</span><span class="tk-op">.</span><span class="tk-ident">op</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;-&quot;</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-ident">expr</span><span class="tk-op">.</span><span class="tk-ident">op</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;+&quot;</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">value</span> <span class="tk-op">=</span> <span class="tk-fn">evaluateConstant</span><span class="tk-op">(</span><span class="tk-ident">expr</span><span class="tk-op">.</span><span class="tk-ident">expr</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">!</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;number&quot;</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">&quot;DEFAULT only supports numeric constants&quot;</span><span class="tk-op">,</span> <span class="tk-op">{</span> <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;SCHEMA_ERROR&quot;</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">return</span> <span class="tk-ident">expr</span><span class="tk-op">.</span><span class="tk-ident">op</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;-&quot;</span> <span class="tk-op">?</span> <span class="tk-op">-</span><span class="tk-ident">value</span> <span class="tk-op">:</span> <span class="tk-ident">value</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">&quot;DEFAULT currently supports constants only&quot;</span><span class="tk-op">,</span> <span class="tk-op">{</span>
+    <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;SCHEMA_ERROR&quot;</span><span class="tk-op">,</span>
+    <span class="tk-ident">hint</span><span class="tk-op">:</span> <span class="tk-str">&quot;For example DEFAULT 0 or DEFAULT 'unknown'.&quot;</span><span class="tk-op">,</span>
+  <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Find a column by name (case-insensitive); returns null if not found. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">findColumn</span><span class="tk-op">(</span><span class="tk-ident">schema</span><span class="tk-op">,</span> <span class="tk-ident">name</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">key</span> <span class="tk-op">=</span> <span class="tk-type">String</span><span class="tk-op">(</span><span class="tk-ident">name</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">columns</span><span class="tk-op">.</span><span class="tk-fn">find</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">column</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">key</span><span class="tk-op">)</span> <span class="tk-op">?</span><span class="tk-op">?</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Map a user-written name to the canonical name in the schema. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">canonicalName</span><span class="tk-op">(</span><span class="tk-ident">columns</span><span class="tk-op">,</span> <span class="tk-ident">name</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">key</span> <span class="tk-op">=</span> <span class="tk-type">String</span><span class="tk-op">(</span><span class="tk-ident">name</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">column</span> <span class="tk-op">=</span> <span class="tk-ident">columns</span><span class="tk-op">.</span><span class="tk-fn">find</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">c</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">c</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">key</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">column</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">&quot;Column does not exist: &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">name</span><span class="tk-op">,</span> <span class="tk-op">{</span> <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;SCHEMA_ERROR&quot;</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-com">/** Short schema description used by the .schema command. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">function</span> <span class="tk-fn">describeSchema</span><span class="tk-op">(</span><span class="tk-ident">schema</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">lines</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-str">&quot;CREATE TABLE &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">name</span> <span class="tk-op">+</span> <span class="tk-str">&quot; (&quot;</span><span class="tk-op">]</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">parts</span> <span class="tk-op">=</span> <span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">columns</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">column</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+    <span class="tk-kw">let</span> <span class="tk-ident">part</span> <span class="tk-op">=</span> <span class="tk-str">&quot;  &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">name</span> <span class="tk-op">+</span> <span class="tk-str">&quot; &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">type</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">primaryKey</span><span class="tk-op">)</span> <span class="tk-ident">part</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-str">&quot; PRIMARY KEY&quot;</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">notNull</span> <span class="tk-op">&amp;</span><span class="tk-op">&amp;</span> <span class="tk-op">!</span><span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">primaryKey</span><span class="tk-op">)</span> <span class="tk-ident">part</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-str">&quot; NOT NULL&quot;</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">unique</span><span class="tk-op">)</span> <span class="tk-ident">part</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-str">&quot; UNIQUE&quot;</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">defaultExpr</span><span class="tk-op">)</span> <span class="tk-ident">part</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-str">&quot; DEFAULT &quot;</span> <span class="tk-op">+</span> <span class="tk-fn">formatConstant</span><span class="tk-op">(</span><span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">defaultValue</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-ident">part</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">constraints</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">primaryKey</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">&gt;</span> <span class="tk-num">1</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-ident">constraints</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-str">&quot;  PRIMARY KEY (&quot;</span> <span class="tk-op">+</span> <span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">primaryKey</span><span class="tk-op">.</span><span class="tk-fn">join</span><span class="tk-op">(</span><span class="tk-str">&quot;, &quot;</span><span class="tk-op">)</span> <span class="tk-op">+</span> <span class="tk-str">&quot;)&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">lines</span><span class="tk-op">.</span><span class="tk-fn">concat</span><span class="tk-op">(</span><span class="tk-ident">parts</span><span class="tk-op">,</span> <span class="tk-ident">constraints</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">join</span><span class="tk-op">(</span><span class="tk-str">&quot;,\n&quot;</span><span class="tk-op">)</span> <span class="tk-op">+</span> <span class="tk-str">&quot;\n);&quot;</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-kw">function</span> <span class="tk-fn">formatConstant</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">value</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;string&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-str">&quot;'&quot;</span> <span class="tk-op">+</span> <span class="tk-ident">value</span><span class="tk-op">.</span><span class="tk-fn">replace</span><span class="tk-op">(</span><span class="tk-op">/</span><span class="tk-str">'/g, &quot;'</span><span class="tk-str">'&quot;) + &quot;'</span><span class="tk-str">&quot;;
+  return String(value);
+}</span></code></pre></div>
+
+  <h2 id="rowid">How is a row represented?</h2>
+  <p>
+    A row is a plain object whose keys are column names, plus a hidden <code>__rowid</code>:
+  </p>
+  <pre class="code"><code>{ __rowid: 1, id: 1, title: "JavaScript", price: 320 }</code></pre>
+  <p>
+    <code>__rowid</code> starts at 1 and keeps increasing; deleted values are never reused. It's the stable way for
+    UPDATE / DELETE to address a row, and the basis for adding indexes later. Tables without a primary key still
+    have a rowid — that's SQLite's design, and it's convenient.
+  </p>
+
+  <h2 id="constraints">Constraints: the database's gatekeepers</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Constraint</th><th>Rule</th><th>Our implementation</th></tr></thead>
+      <tbody>
+        <tr><td><code>NOT NULL</code></td><td>Can't be NULL</td><td>Checked on write</td></tr>
+        <tr><td><code>PRIMARY KEY</code></td><td>Unique + not NULL</td><td>Treated as a UNIQUE + NOT NULL pair</td></tr>
+        <tr><td><code>UNIQUE</code></td><td>The whole value set must be distinct</td><td>NULLs allowed (SQL standard)</td></tr>
+        <tr><td><code>DEFAULT</code></td><td>Used when no value is given</td><td>Computed at CREATE TABLE time</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    UNIQUE checking currently scans row by row (O(n)). That gets slow with a lot of data — exactly why indexes
+    exist; we'll come back to this in chapter 9 when we discuss JOIN performance.
+  </p>
+  <div class="callout callout--note">
+    <p class="callout__title">Why does UNIQUE allow multiple NULLs?</p>
+    <p>
+      Because the SQL standard defines NULL as "unknown". Two unknowns aren't guaranteed to be equal, so they
+      shouldn't conflict. Many engineers find "a UNIQUE column can hold many NULLs" surprising the first time, but
+      it makes sense: if you don't know someone's email, you can't claim two unknown emails are duplicates.
+    </p>
+  </div>
+
+  <div class="file"><div class="file__head"><span class="file__name">src/table.js</span><span class="file__meta">JavaScript · 183 lines · step 5</span></div><pre class="code"><code><span class="tk-com">/**
+ * Table: an in-memory table
+ *
+ * Each row is a plain object keyed by column name, plus a hidden
+ * __rowid (starting at 1 and incrementing). Tables without a PRIMARY KEY still have a rowid,
+ * giving UPDATE / DELETE a stable way to target a row.
+ *
+ * This file does three things:
+ *   1. apply type affinity on write ('42' -&gt; 42)
+ *   2. apply defaults (DEFAULT)
+ *   3. check constraints (NOT NULL / UNIQUE / PRIMARY KEY)
+ *
+ * The query itself (WHERE, ORDER BY...) lives in engine/; Table only provides scans.
+ */</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">SqlError</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;./errors.js&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">applyAffinity</span><span class="tk-op">,</span> <span class="tk-ident">groupKey</span><span class="tk-op">,</span> <span class="tk-ident">isNull</span><span class="tk-op">,</span> <span class="tk-ident">normalizeValue</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;./values.js&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-kw">export</span> <span class="tk-kw">class</span> <span class="tk-ident">Table</span> <span class="tk-op">{</span>
+  <span class="tk-com">/**
+   * @param {object} schema produced by schema.js
+   * @param {{rows?: object[], nextRowid?: number}} [data]
+   */</span>
+  <span class="tk-fn">constructor</span><span class="tk-op">(</span><span class="tk-ident">schema</span><span class="tk-op">,</span> <span class="tk-ident">data</span> <span class="tk-op">=</span> <span class="tk-op">{</span><span class="tk-op">}</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">schema</span> <span class="tk-op">=</span> <span class="tk-ident">schema</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">rows</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-type">Map</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">nextRowid</span> <span class="tk-op">=</span> <span class="tk-ident">data</span><span class="tk-op">.</span><span class="tk-ident">nextRowid</span> <span class="tk-op">?</span><span class="tk-op">?</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">row</span> <span class="tk-kw">of</span> <span class="tk-ident">data</span><span class="tk-op">.</span><span class="tk-ident">rows</span> <span class="tk-op">?</span><span class="tk-op">?</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">copy</span> <span class="tk-op">=</span> <span class="tk-op">{</span> <span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-ident">row</span> <span class="tk-op">}</span><span class="tk-op">;</span>
+      <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">.</span><span class="tk-fn">set</span><span class="tk-op">(</span><span class="tk-ident">copy</span><span class="tk-op">.</span><span class="tk-ident">__rowid</span><span class="tk-op">,</span> <span class="tk-ident">copy</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">copy</span><span class="tk-op">.</span><span class="tk-ident">__rowid</span> <span class="tk-op">&gt;</span><span class="tk-op">=</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">nextRowid</span><span class="tk-op">)</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">nextRowid</span> <span class="tk-op">=</span> <span class="tk-ident">copy</span><span class="tk-op">.</span><span class="tk-ident">__rowid</span> <span class="tk-op">+</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-ident">get</span> <span class="tk-fn">name</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">return</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-ident">get</span> <span class="tk-fn">columns</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">return</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">columns</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** Return all rows (read-only walk; the executor does not modify these objects). */</span>
+  <span class="tk-fn">all</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">return</span> <span class="tk-op">[</span><span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">.</span><span class="tk-fn">values</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">]</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-fn">size</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">return</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">.</span><span class="tk-ident">size</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-fn">get</span><span class="tk-op">(</span><span class="tk-ident">rowid</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">return</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">.</span><span class="tk-fn">get</span><span class="tk-op">(</span><span class="tk-ident">rowid</span><span class="tk-op">)</span> <span class="tk-op">?</span><span class="tk-op">?</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/**
+   * Insert a row.
+   * @param {Record&lt;string, unknown&gt;} values column name -&gt; value (may be partial)
+   * @returns {object} the row actually written (including __rowid)
+   */</span>
+  <span class="tk-fn">insert</span><span class="tk-op">(</span><span class="tk-ident">values</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">row</span> <span class="tk-op">=</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">buildRow</span><span class="tk-op">(</span><span class="tk-ident">values</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">checkConstraints</span><span class="tk-op">(</span><span class="tk-ident">row</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">row</span><span class="tk-op">.</span><span class="tk-ident">__rowid</span> <span class="tk-op">=</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">nextRowid</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">nextRowid</span> <span class="tk-op">+</span><span class="tk-op">=</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">.</span><span class="tk-fn">set</span><span class="tk-op">(</span><span class="tk-ident">row</span><span class="tk-op">.</span><span class="tk-ident">__rowid</span><span class="tk-op">,</span> <span class="tk-ident">row</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-ident">row</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/**
+   * Update a row. values only needs to contain the columns to change.
+   * @param {number} rowid
+   * @param {Record&lt;string, unknown&gt;} values
+   */</span>
+  <span class="tk-fn">update</span><span class="tk-op">(</span><span class="tk-ident">rowid</span><span class="tk-op">,</span> <span class="tk-ident">values</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">existing</span> <span class="tk-op">=</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">.</span><span class="tk-fn">get</span><span class="tk-op">(</span><span class="tk-ident">rowid</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">existing</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">&quot;Row to update not found (rowid = &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">rowid</span> <span class="tk-op">+</span> <span class="tk-str">&quot;)&quot;</span><span class="tk-op">,</span> <span class="tk-op">{</span> <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;INTERNAL_ERROR&quot;</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">candidate</span> <span class="tk-op">=</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">buildRow</span><span class="tk-op">(</span><span class="tk-ident">values</span><span class="tk-op">,</span> <span class="tk-ident">existing</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">checkConstraints</span><span class="tk-op">(</span><span class="tk-ident">candidate</span><span class="tk-op">,</span> <span class="tk-ident">rowid</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">candidate</span><span class="tk-op">.</span><span class="tk-ident">__rowid</span> <span class="tk-op">=</span> <span class="tk-ident">rowid</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">.</span><span class="tk-fn">set</span><span class="tk-op">(</span><span class="tk-ident">rowid</span><span class="tk-op">,</span> <span class="tk-ident">candidate</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-ident">candidate</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** Delete a row; returns whether anything was actually deleted. */</span>
+  <span class="tk-kw">delete</span><span class="tk-op">(</span><span class="tk-ident">rowid</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">return</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">.</span><span class="tk-kw">delete</span><span class="tk-op">(</span><span class="tk-ident">rowid</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/**
+   * Turn &quot;values supplied by the user&quot; into &quot;the row that is actually stored&quot;:
+   * - columns not supplied use DEFAULT, otherwise NULL
+   * - all values go through type affinity conversion
+   */</span>
+  <span class="tk-fn">buildRow</span><span class="tk-op">(</span><span class="tk-ident">values</span><span class="tk-op">,</span> <span class="tk-ident">existingRow</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">provided</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-type">Map</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-op">[</span><span class="tk-ident">key</span><span class="tk-op">,</span> <span class="tk-ident">value</span><span class="tk-op">]</span> <span class="tk-kw">of</span> <span class="tk-type">Object</span><span class="tk-op">.</span><span class="tk-fn">entries</span><span class="tk-op">(</span><span class="tk-ident">values</span> <span class="tk-op">?</span><span class="tk-op">?</span> <span class="tk-op">{</span><span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-ident">provided</span><span class="tk-op">.</span><span class="tk-fn">set</span><span class="tk-op">(</span><span class="tk-ident">key</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+
+    <span class="tk-kw">const</span> <span class="tk-ident">row</span> <span class="tk-op">=</span> <span class="tk-op">{</span><span class="tk-op">}</span><span class="tk-op">;</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">column</span> <span class="tk-kw">of</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">columns</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">key</span> <span class="tk-op">=</span> <span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">let</span> <span class="tk-ident">value</span><span class="tk-op">;</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">provided</span><span class="tk-op">.</span><span class="tk-fn">has</span><span class="tk-op">(</span><span class="tk-ident">key</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-ident">value</span> <span class="tk-op">=</span> <span class="tk-ident">provided</span><span class="tk-op">.</span><span class="tk-fn">get</span><span class="tk-op">(</span><span class="tk-ident">key</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span> <span class="tk-kw">else</span> <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">existingRow</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-ident">value</span> <span class="tk-op">=</span> <span class="tk-ident">existingRow</span><span class="tk-op">[</span><span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">]</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span> <span class="tk-kw">else</span> <span class="tk-op">{</span>
+        <span class="tk-ident">value</span> <span class="tk-op">=</span> <span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">defaultValue</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+      <span class="tk-ident">row</span><span class="tk-op">[</span><span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">]</span> <span class="tk-op">=</span> <span class="tk-fn">applyAffinity</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">,</span> <span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">affinity</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+
+    <span class="tk-com">// Unknown columns must be reported explicitly, not silently ignored.</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">key</span> <span class="tk-kw">of</span> <span class="tk-ident">provided</span><span class="tk-op">.</span><span class="tk-fn">keys</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">columns</span><span class="tk-op">.</span><span class="tk-fn">some</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">column</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">key</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">&quot;Table &quot;</span> <span class="tk-op">+</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">name</span> <span class="tk-op">+</span> <span class="tk-str">&quot; has no column &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">key</span><span class="tk-op">,</span> <span class="tk-op">{</span>
+          <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;SCHEMA_ERROR&quot;</span><span class="tk-op">,</span>
+          <span class="tk-ident">hint</span><span class="tk-op">:</span> <span class="tk-str">&quot;Available columns: &quot;</span> <span class="tk-op">+</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">columns</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">c</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">c</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">join</span><span class="tk-op">(</span><span class="tk-str">&quot;, &quot;</span><span class="tk-op">)</span><span class="tk-op">,</span>
+        <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+    <span class="tk-op">}</span>
+
+    <span class="tk-kw">return</span> <span class="tk-ident">row</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/**
+   * Check constraints. ignoreRowid is used by UPDATE to exclude the row itself.
+   */</span>
+  <span class="tk-fn">checkConstraints</span><span class="tk-op">(</span><span class="tk-ident">row</span><span class="tk-op">,</span> <span class="tk-ident">ignoreRowid</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">column</span> <span class="tk-kw">of</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">columns</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">notNull</span> <span class="tk-op">&amp;</span><span class="tk-op">&amp;</span> <span class="tk-fn">isNull</span><span class="tk-op">(</span><span class="tk-ident">row</span><span class="tk-op">[</span><span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">&quot;Column &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">column</span><span class="tk-op">.</span><span class="tk-ident">name</span> <span class="tk-op">+</span> <span class="tk-str">&quot; cannot be NULL (NOT NULL constraint)&quot;</span><span class="tk-op">,</span> <span class="tk-op">{</span>
+          <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;CONSTRAINT_ERROR&quot;</span><span class="tk-op">,</span>
+        <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-op">}</span>
+    <span class="tk-op">}</span>
+
+    <span class="tk-kw">const</span> <span class="tk-ident">uniqueSets</span> <span class="tk-op">=</span> <span class="tk-op">[</span><span class="tk-op">]</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">primaryKey</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">&gt;</span> <span class="tk-num">0</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-ident">uniqueSets</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-op">{</span> <span class="tk-ident">columns</span><span class="tk-op">:</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">primaryKey</span><span class="tk-op">,</span> <span class="tk-ident">label</span><span class="tk-op">:</span> <span class="tk-str">&quot;PRIMARY KEY&quot;</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">unique</span> <span class="tk-kw">of</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">uniques</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-ident">uniqueSets</span><span class="tk-op">.</span><span class="tk-fn">push</span><span class="tk-op">(</span><span class="tk-op">{</span> <span class="tk-ident">columns</span><span class="tk-op">:</span> <span class="tk-ident">unique</span><span class="tk-op">,</span> <span class="tk-ident">label</span><span class="tk-op">:</span> <span class="tk-str">&quot;UNIQUE&quot;</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-op">{</span> <span class="tk-ident">columns</span><span class="tk-op">,</span> <span class="tk-ident">label</span> <span class="tk-op">}</span> <span class="tk-kw">of</span> <span class="tk-ident">uniqueSets</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">values</span> <span class="tk-op">=</span> <span class="tk-ident">columns</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">name</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">row</span><span class="tk-op">[</span><span class="tk-ident">name</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-com">// UNIQUE allows multiple NULLs (SQL standard); PRIMARY KEY is already covered by NOT NULL.</span>
+      <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">values</span><span class="tk-op">.</span><span class="tk-fn">some</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-fn">isNull</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-kw">continue</span><span class="tk-op">;</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">key</span> <span class="tk-op">=</span> <span class="tk-fn">groupKey</span><span class="tk-op">(</span><span class="tk-ident">values</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">other</span> <span class="tk-kw">of</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">.</span><span class="tk-fn">values</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+        <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">other</span><span class="tk-op">.</span><span class="tk-ident">__rowid</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">ignoreRowid</span><span class="tk-op">)</span> <span class="tk-kw">continue</span><span class="tk-op">;</span>
+        <span class="tk-kw">const</span> <span class="tk-ident">otherValues</span> <span class="tk-op">=</span> <span class="tk-ident">columns</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">name</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">other</span><span class="tk-op">[</span><span class="tk-ident">name</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">otherValues</span><span class="tk-op">.</span><span class="tk-fn">some</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-fn">isNull</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-kw">continue</span><span class="tk-op">;</span>
+        <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-fn">groupKey</span><span class="tk-op">(</span><span class="tk-ident">otherValues</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-ident">key</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+          <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span>
+            <span class="tk-str">&quot;Violates &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">label</span> <span class="tk-op">+</span> <span class="tk-str">&quot; constraint: (&quot;</span> <span class="tk-op">+</span> <span class="tk-ident">columns</span><span class="tk-op">.</span><span class="tk-fn">join</span><span class="tk-op">(</span><span class="tk-str">&quot;, &quot;</span><span class="tk-op">)</span> <span class="tk-op">+</span> <span class="tk-str">&quot;) = (&quot;</span> <span class="tk-op">+</span> <span class="tk-ident">values</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-ident">formatValue</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">join</span><span class="tk-op">(</span><span class="tk-str">&quot;, &quot;</span><span class="tk-op">)</span> <span class="tk-op">+</span> <span class="tk-str">&quot;) already exists&quot;</span><span class="tk-op">,</span>
+            <span class="tk-op">{</span> <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;CONSTRAINT_ERROR&quot;</span> <span class="tk-op">}</span>
+          <span class="tk-op">)</span><span class="tk-op">;</span>
+        <span class="tk-op">}</span>
+      <span class="tk-op">}</span>
+    <span class="tk-op">}</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** Serialize to plain data for storage or transaction snapshots. */</span>
+  <span class="tk-fn">toJSON</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">return</span> <span class="tk-op">{</span>
+      <span class="tk-ident">schema</span><span class="tk-op">:</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">schema</span><span class="tk-op">,</span>
+      <span class="tk-ident">nextRowid</span><span class="tk-op">:</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">nextRowid</span><span class="tk-op">,</span>
+      <span class="tk-ident">rows</span><span class="tk-op">:</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">all</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">,</span>
+    <span class="tk-op">}</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+<span class="tk-op">}</span>
+
+<span class="tk-kw">function</span> <span class="tk-fn">formatValue</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">normalized</span> <span class="tk-op">=</span> <span class="tk-fn">normalizeValue</span><span class="tk-op">(</span><span class="tk-ident">value</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">normalized</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-kw">null</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-str">&quot;NULL&quot;</span><span class="tk-op">;</span>
+  <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">typeof</span> <span class="tk-ident">normalized</span> <span class="tk-op">=</span><span class="tk-op">=</span><span class="tk-op">=</span> <span class="tk-str">&quot;string&quot;</span><span class="tk-op">)</span> <span class="tk-kw">return</span> <span class="tk-str">&quot;'&quot;</span> <span class="tk-op">+</span> <span class="tk-ident">normalized</span> <span class="tk-op">+</span> <span class="tk-str">&quot;'&quot;</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-type">String</span><span class="tk-op">(</span><span class="tk-ident">normalized</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span></code></pre></div>
+
+  <h2 id="storage">Abstract "where data lives" into an interface</h2>
+  <p>
+    <code>Database</code> shouldn't know whether it runs in memory or on disk. So we define a tiny interface:
+  </p>
+  <pre class="code"><code>store.load()          // return the last saved snapshot, or null
+store.save(snapshot)  // write the whole database out
+store.close()         // clean up</code></pre>
+  <p>
+    <code>MemoryStore</code> just keeps the snapshot in a variable. Chapter 10's <code>DiskStore</code> uses exactly
+    the same interface to split the snapshot into pages and write them to a file. Defining the interface first and
+    swapping the implementation later keeps tests fast (in memory) while production still persists.
+  </p>
+
+  <div class="file"><div class="file__head"><span class="file__name">src/storage/memory.js</span><span class="file__meta">JavaScript · 31 lines · step 5</span></div><pre class="code"><code><span class="tk-com">/**
+ * MemoryStore: a storage backend that lives only in memory.
+ *
+ * Chapter 10 adds a DiskStore that wires the same interface to real files:
+ *
+ *   load()         -&gt; last saved snapshot (null if never saved)
+ *   save(snapshot) -&gt; write the whole database out
+ *   close()        -&gt; close
+ *
+ * With this interface, Database does not need to know whether it runs in memory or on disk.
+ */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">class</span> <span class="tk-ident">MemoryStore</span> <span class="tk-op">{</span>
+  <span class="tk-fn">constructor</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">snapshot</span> <span class="tk-op">=</span> <span class="tk-kw">null</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** @returns {object|null} the last saved snapshot */</span>
+  <span class="tk-fn">load</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">return</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">snapshot</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** @param {object} snapshot */</span>
+  <span class="tk-fn">save</span><span class="tk-op">(</span><span class="tk-ident">snapshot</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-com">// Deep copy so later database changes do not affect the &quot;saved&quot; version.</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">snapshot</span> <span class="tk-op">=</span> <span class="tk-fn">structuredClone</span><span class="tk-op">(</span><span class="tk-ident">snapshot</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-fn">close</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-com">// The in-memory version has nothing to close.</span>
+  <span class="tk-op">}</span>
+<span class="tk-op">}</span></code></pre></div>
+
+  <h2 id="database">Database: the public facade</h2>
+  <p>
+    <code>Database</code> collects all tables and is responsible for creating and dropping tables, exporting
+    snapshots, and restoring from them. It deliberately contains no SQL parsing or query execution — that's the next
+    chapter. The facade's benefit: users have a single entry point, and every internal module can be tested on its
+    own.
+  </p>
+
+  <div class="file"><div class="file__head"><span class="file__name">src/database.js</span><span class="file__meta">JavaScript · 114 lines · step 5</span></div><pre class="code"><code><span class="tk-com">/**
+ * Database: the facade of the whole engine
+ *
+ * It keeps track of &quot;which tables exist&quot; and is responsible for:
+ *   - creating / dropping tables
+ *   - loading from the storage backend and writing snapshots back to it
+ *   - later (chapter 6) providing exec() to run SQL
+ *
+ * All database state lives in memory: it is read from store.load() on open, and after writes
+ * store.save() is called to persist it. This is a teaching simplification, but the interface matches a real database
+ * exactly: the storage layer is replaceable (MemoryStore / DiskStore).
+ */</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">MemoryStore</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;./storage/memory.js&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">Table</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;./table.js&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">SqlError</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;./errors.js&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-com">/** Version of the current snapshot format; lets us detect format changes later. */</span>
+<span class="tk-kw">export</span> <span class="tk-kw">const</span> <span class="tk-ident">SNAPSHOT_VERSION</span> <span class="tk-op">=</span> <span class="tk-num">1</span><span class="tk-op">;</span>
+
+<span class="tk-kw">export</span> <span class="tk-kw">class</span> <span class="tk-ident">Database</span> <span class="tk-op">{</span>
+  <span class="tk-com">/**
+   * @param {{store?: {load:Function, save:Function, close?:Function}}} [options]
+   */</span>
+  <span class="tk-fn">constructor</span><span class="tk-op">(</span><span class="tk-ident">options</span> <span class="tk-op">=</span> <span class="tk-op">{</span><span class="tk-op">}</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">store</span> <span class="tk-op">=</span> <span class="tk-ident">options</span><span class="tk-op">.</span><span class="tk-ident">store</span> <span class="tk-op">?</span><span class="tk-op">?</span> <span class="tk-kw">new</span> <span class="tk-fn">MemoryStore</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-com">/** @type {Map&lt;string, Table&gt;} key is the lowercase table name */</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">tables</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-type">Map</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">closed</span> <span class="tk-op">=</span> <span class="tk-kw">false</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/**
+   * Open a database: create a Database and load existing data from the store.
+   * @param {{load:Function, save:Function, close?:Function}} [store]
+   */</span>
+  <span class="tk-ident">static</span> <span class="tk-fn">open</span><span class="tk-op">(</span><span class="tk-ident">store</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-fn">MemoryStore</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-fn">Database</span><span class="tk-op">(</span><span class="tk-op">{</span> <span class="tk-ident">store</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">snapshot</span> <span class="tk-op">=</span> <span class="tk-ident">store</span><span class="tk-op">.</span><span class="tk-fn">load</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-ident">snapshot</span><span class="tk-op">)</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">loadSnapshot</span><span class="tk-op">(</span><span class="tk-ident">snapshot</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-ident">db</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** Find a table by name (case-insensitive); returns undefined if not found. */</span>
+  <span class="tk-fn">findTable</span><span class="tk-op">(</span><span class="tk-ident">name</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">return</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">tables</span><span class="tk-op">.</span><span class="tk-fn">get</span><span class="tk-op">(</span><span class="tk-type">String</span><span class="tk-op">(</span><span class="tk-ident">name</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** Find a table by name; throws if not found. */</span>
+  <span class="tk-fn">getTable</span><span class="tk-op">(</span><span class="tk-ident">name</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">table</span> <span class="tk-op">=</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">findTable</span><span class="tk-op">(</span><span class="tk-ident">name</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">table</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">&quot;Table does not exist: &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">name</span><span class="tk-op">,</span> <span class="tk-op">{</span>
+        <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;SCHEMA_ERROR&quot;</span><span class="tk-op">,</span>
+        <span class="tk-ident">hint</span><span class="tk-op">:</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">listTables</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-ident">length</span> <span class="tk-op">&gt;</span> <span class="tk-num">0</span> <span class="tk-op">?</span> <span class="tk-str">&quot;Existing tables: &quot;</span> <span class="tk-op">+</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">listTables</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">join</span><span class="tk-op">(</span><span class="tk-str">&quot;, &quot;</span><span class="tk-op">)</span> <span class="tk-op">:</span> <span class="tk-str">&quot;There are no tables yet&quot;</span><span class="tk-op">,</span>
+      <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">return</span> <span class="tk-ident">table</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-fn">hasTable</span><span class="tk-op">(</span><span class="tk-ident">name</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">return</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">tables</span><span class="tk-op">.</span><span class="tk-fn">has</span><span class="tk-op">(</span><span class="tk-type">String</span><span class="tk-op">(</span><span class="tk-ident">name</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-fn">listTables</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">return</span> <span class="tk-op">[</span><span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">tables</span><span class="tk-op">.</span><span class="tk-fn">values</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">]</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">table</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">table</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** Create a table (the schema is produced by schema.js). */</span>
+  <span class="tk-fn">createTable</span><span class="tk-op">(</span><span class="tk-ident">schema</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">hasTable</span><span class="tk-op">(</span><span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">&quot;Table already exists: &quot;</span> <span class="tk-op">+</span> <span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">,</span> <span class="tk-op">{</span> <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;SCHEMA_ERROR&quot;</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">const</span> <span class="tk-ident">table</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-fn">Table</span><span class="tk-op">(</span><span class="tk-ident">schema</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">tables</span><span class="tk-op">.</span><span class="tk-fn">set</span><span class="tk-op">(</span><span class="tk-ident">schema</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-ident">table</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-ident">table</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** Drop a table; returns whether anything was actually dropped. */</span>
+  <span class="tk-fn">dropTable</span><span class="tk-op">(</span><span class="tk-ident">name</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">return</span> <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">tables</span><span class="tk-op">.</span><span class="tk-kw">delete</span><span class="tk-op">(</span><span class="tk-type">String</span><span class="tk-op">(</span><span class="tk-ident">name</span><span class="tk-op">)</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** Export a snapshot of the whole database (plain data, JSON-serializable). */</span>
+  <span class="tk-fn">snapshot</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">return</span> <span class="tk-op">{</span>
+      <span class="tk-ident">version</span><span class="tk-op">:</span> <span class="tk-ident">SNAPSHOT_VERSION</span><span class="tk-op">,</span>
+      <span class="tk-ident">tables</span><span class="tk-op">:</span> <span class="tk-op">[</span><span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-op">.</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">tables</span><span class="tk-op">.</span><span class="tk-fn">values</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">]</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">table</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">table</span><span class="tk-op">.</span><span class="tk-fn">toJSON</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">,</span>
+    <span class="tk-op">}</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** Restore the whole database from a snapshot. */</span>
+  <span class="tk-fn">loadSnapshot</span><span class="tk-op">(</span><span class="tk-ident">snapshot</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-op">!</span><span class="tk-ident">snapshot</span> <span class="tk-op">|</span><span class="tk-op">|</span> <span class="tk-op">!</span><span class="tk-type">Array</span><span class="tk-op">.</span><span class="tk-fn">isArray</span><span class="tk-op">(</span><span class="tk-ident">snapshot</span><span class="tk-op">.</span><span class="tk-ident">tables</span><span class="tk-op">)</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-fn">SqlError</span><span class="tk-op">(</span><span class="tk-str">&quot;Invalid database file format&quot;</span><span class="tk-op">,</span> <span class="tk-op">{</span> <span class="tk-ident">code</span><span class="tk-op">:</span> <span class="tk-str">&quot;STORAGE_ERROR&quot;</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">tables</span><span class="tk-op">.</span><span class="tk-fn">clear</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">for</span> <span class="tk-op">(</span><span class="tk-kw">const</span> <span class="tk-ident">data</span> <span class="tk-kw">of</span> <span class="tk-ident">snapshot</span><span class="tk-op">.</span><span class="tk-ident">tables</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+      <span class="tk-kw">const</span> <span class="tk-ident">table</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-fn">Table</span><span class="tk-op">(</span><span class="tk-ident">data</span><span class="tk-op">.</span><span class="tk-ident">schema</span><span class="tk-op">,</span> <span class="tk-op">{</span> <span class="tk-ident">rows</span><span class="tk-op">:</span> <span class="tk-ident">data</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-ident">nextRowid</span><span class="tk-op">:</span> <span class="tk-ident">data</span><span class="tk-op">.</span><span class="tk-ident">nextRowid</span> <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+      <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">tables</span><span class="tk-op">.</span><span class="tk-fn">set</span><span class="tk-op">(</span><span class="tk-ident">table</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">.</span><span class="tk-fn">toLowerCase</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-ident">table</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-op">}</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** Write the current state back to the storage backend. */</span>
+  <span class="tk-fn">save</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">store</span><span class="tk-op">.</span><span class="tk-fn">save</span><span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">snapshot</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+
+  <span class="tk-com">/** Close the database: save first, then close the store. */</span>
+  <span class="tk-fn">close</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+    <span class="tk-kw">if</span> <span class="tk-op">(</span><span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">closed</span><span class="tk-op">)</span> <span class="tk-kw">return</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-fn">save</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">store</span><span class="tk-op">.</span><span class="tk-ident">close</span><span class="tk-op">?</span><span class="tk-op">.</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">this</span><span class="tk-op">.</span><span class="tk-ident">closed</span> <span class="tk-op">=</span> <span class="tk-kw">true</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span>
+<span class="tk-op">}</span></code></pre></div>
+
+  <h2 id="snapshot">Snapshots: a database you can pass around</h2>
+  <p>
+    <code>snapshot()</code> returns a plain JSON-serializable object; <code>loadSnapshot()</code> rebuilds the
+    whole database from one. This isn't just for persistence — it's also the basis for <strong>transactions</strong>:
+    take a snapshot at <code>BEGIN</code> and restore it at <code>ROLLBACK</code>. Chapter 10 shows how this design
+    carries all the way to disk and the journal.
+  </p>
+
+  <div class="checkpoint">
+    <p class="checkpoint__title">Checkpoint — storage-layer tests</p>
+    <pre class="code"><code>node --test tests/schema.test.js tests/table.test.js tests/database.test.js</code></pre>
+    <p class="checkpoint__expect">ℹ tests 24
+ℹ pass 24
+ℹ fail 0</p>
+    <p>
+      You can also open <code>steps/05-storage</code> and run <code>node --test</code> directly to confirm that your
+      progress matches the reference implementation.
+    </p>
+  </div>
+
+  <h2 id="recap">Chapter recap</h2>
+  <ul>
+    <li>The schema is the AST's runtime form; it rejects duplicate columns and similar errors up front.</li>
+    <li>Each row is a plain object plus <code>__rowid</code>; constraints are checked in <code>Table</code>.</li>
+    <li>The storage backend has only three methods — load / save / close — so memory and disk are interchangeable.</li>
+    <li>Snapshots are both the save format and the basis for transaction rollback.</li>
+  </ul>
+
+  <div class="exercise">
+    <p class="exercise__title">Exercises</p>
+    <ol>
+      <li>Add a <code>CHECK (price &gt;= 0)</code> constraint: the parser must support it, the schema must preserve it, and Table must enforce it.</li>
+      <li>Change UNIQUE checking from a linear scan to a <code>Set</code> cache (remember to keep it in sync on update).</li>
+      <li>Make <code>snapshot()</code> also record which database version this is, and check it on load.</li>
+    </ol>
+  </div>
+
+  <h2 id="vocab">Chapter glossary</h2>
+  <dl class="vocab">
+    <dt>Schema</dt><dd>A table's structural definition: columns, types, constraints.</dd>
+    <dt>rowid</dt><dd>An internal number the database assigns to each row; not reused after deletion.</dd>
+    <dt>Facade</dt><dd>A design pattern that exposes a single entry point; <code>Database</code> is exactly that.</dd>
+  </dl>
+</article>
+
+
+      <footer class="chapter-foot site-chapter-foot">
+        <div class="chapter-foot__inner">
+          <p class="chapter-foot__label">Finished this chapter? Mark it complete and the progress stays in this browser.</p>
+          <button id="mark-complete" class="btn btn--complete" type="button"
+                  data-chapter="" aria-pressed="false">Mark chapter complete</button>
+        </div>
+        <nav class="pager" aria-label="Previous and next chapter">
+          <a class="pager-link pager-link--prev" href="../chapters/ch04.html"><span class="pager-link__meta">Previous chapter</span><span class="pager-link__title">Chapter 4 · Values and types</span></a>
+          <a class="pager-link pager-link--next" href="../chapters/ch06.html"><span class="pager-link__meta">Next chapter</span><span class="pager-link__title">Chapter 6 · SELECT pipeline</span></a>
+        </nav>
+      </footer>
+    </div>
+    <aside id="page-toc" class="page-toc" aria-label="On this page"></aside>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <p><strong>Build a SQL Database Engine from Scratch</strong> — ten chapters that start with a single character and end with a database that persists, queries, and transacts.</p>
+        <p class="footer-mono">Zero dependencies · Node.js only · built by hand</p>
+      </div>
+      <div>
+        <p class="footer-mono"><a href="../playground.html">SQL Playground</a> · <a href="../reference.html">Syntax Reference</a> · <a href="../index.html">Home</a></p>
+        <p class="footer-mono">Switch between light and dark themes in the top-right corner.</p>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="search-overlay" role="dialog" aria-modal="true" aria-label="Search chapters" aria-hidden="true">
+    <div class="search-panel">
+      <div class="search-panel__head">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <input id="search-input" type="search" placeholder="Search chapter titles or summaries…"
+               autocomplete="off" spellcheck="false" aria-label="Search chapters">
+        <span class="search-panel__esc">Esc</span>
+      </div>
+      <ul class="search-results" id="search-results"></ul>
+      <div class="search-panel__foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> select</span>
+        <span><kbd>Enter</kbd> open</span>
+        <span><kbd>/</kbd> open search</span>
+        <span><kbd>[</kbd><kbd>]</kbd> previous / next chapter</span>
+      </div>
+    </div>
+  </div>
+
+  <noscript>
+    <p style="max-width:74ch;margin:1rem auto;padding:0 1rem;font-family:monospace;color:#6e675c">
+      The main content of this site is readable without JavaScript; search, theme switching, and progress tracking need it enabled.
+    </p>
+  </noscript>
+</body>
+</html>

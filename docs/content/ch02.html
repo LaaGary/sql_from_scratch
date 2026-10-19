@@ -1,0 +1,166 @@
+<aside class="chapter-meta">
+  <h2 class="chapter-meta__title">Chapter info</h2>
+  <ul class="chapter-meta__list">
+    <li><strong>Estimated time</strong> 45 minutes</li>
+    <li><strong>Difficulty</strong> ★★☆☆☆ Some familiarity with state machines</li>
+    <li><strong>What you'll learn</strong> Lexing, position tracking, comments and string escaping, error messages</li>
+    <li><strong>What you'll build</strong> <code>src/tokenizer.js</code>, <code>src/errors.js</code>, <code>tests/tokenizer.test.js</code></li>
+  </ul>
+</aside>
+
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Chapter 02 / Lexing</p>
+    <h1>Cutting SQL into tokens: the tokenizer</h1>
+    <p class="chapter-lead">
+      A computer doesn't understand the word "SELECT"; it only sees a stream of characters. The tokenizer's job is to
+      cut that stream into human-defined units and record where each unit appeared in the source text. It's the first
+      step of the whole compile pipeline, and the best one to warm up on.
+    </p>
+  </header>
+
+  <h2 id="goal">The input and output we want</h2>
+  <p>Here's a piece of SQL:</p>
+  <pre class="code"><code>SELECT name, COUNT(*) FROM books WHERE price &gt;= 100; -- find the pricier books</code></pre>
+  <p>The output is an array of tokens (type, value, position):</p>
+  <pre class="code"><code>[
+  { type: "word",   value: "SELECT", upper: "SELECT", line: 1, column: 1 },
+  { type: "word",   value: "name",   line: 1, column: 8 },
+  { type: "punct",  value: ",",      line: 1, column: 12 },
+  { type: "word",   value: "COUNT",  upper: "COUNT", line: 1, column: 14 },
+  ...
+  { type: "eof",    value: "",       line: 1, column: 60 }
+]</code></pre>
+  <p>
+    Notice a few things: comments never become tokens, strings lose their quotes, keywords always get an
+    <code>upper</code> field for easy comparison later, and the array always ends with an <code>eof</code>.
+    All of these choices make the parser easier to write.
+  </p>
+
+  <h2 id="errors">Write the error type first: error messages are part of the product</h2>
+  <p>
+    Before writing the tokenizer, create a shared error class. A good database tells you
+    "line 3, column 15: missing closing parenthesis" instead of throwing a bare
+    <code>Unexpected token</code>.
+  </p>
+  <p>
+    <code>SqlError</code> carries three fields: a stable <code>code</code> (so code can branch on the kind of error),
+    <code>position</code> (offset / line / column), and an optional <code>hint</code> (how to fix it).
+    Its <code>format(sql)</code> method renders the error with a caret:
+  </p>
+  <pre class="code"><code>SYNTAX_ERROR: expected an expression but found ';'
+ 1 | SELECT * FROM books WHERE ;
+   |                          ^
+Hint: ...</code></pre>
+
+  <!-- include src/errors.js step=02 title="src/errors.js" -->
+
+  <h2 id="scan">Scanning: move forward one character at a time</h2>
+  <p>
+    The most direct implementation is a <code>while</code> loop with an index <code>i</code>: look at the current
+    character and decide how many characters to consume. That's a small state machine.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>What you see</th><th>Action</th><th>Emits token</th></tr></thead>
+      <tbody>
+        <tr><td>Whitespace, newline</td><td>Advance and update the line counter</td><td>No</td></tr>
+        <tr><td><code>--</code></td><td>Consume to end of line</td><td>No</td></tr>
+        <tr><td><code>/*</code></td><td>Consume through <code>*/</code></td><td>No</td></tr>
+        <tr><td><code>'...'</code></td><td>Handle <code>''</code> escaping</td><td><code>string</code></td></tr>
+        <tr><td>Starts with a digit</td><td>Read integer / decimal / exponent</td><td><code>number</code></td></tr>
+        <tr><td>Letter or <code>_</code></td><td>Read the whole identifier</td><td><code>word</code></td></tr>
+        <tr><td><code>+ - * / % = &lt; &gt; !</code></td><td>Try the two-character operator first (<code>&gt;=</code>)</td><td><code>op</code></td></tr>
+        <tr><td><code>( ) , ; .</code></td><td>Single character</td><td><code>punct</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Two easy traps: first, <strong>compare operators longest-first</strong>, or <code>&gt;=</code> is split into
+    <code>&gt;</code> and <code>=</code>. Second, <strong>record the position before consuming characters</strong>,
+    or the error message points at the next character.
+  </p>
+
+  <!-- include src/tokenizer.js step=02 title="src/tokenizer.js" -->
+
+  <h2 id="positions">How are line and column numbers computed?</h2>
+  <p>
+    We only need to remember where the current line starts (<code>lineStart</code>).
+    The current column = current offset − lineStart + 1. Every time we consume a newline, increment
+    <code>line</code> and set <code>lineStart</code> to the position of the next character.
+  </p>
+  <p>
+    This approach doesn't need to scan the whole document up front, and it won't miscount on CJK text or emoji,
+    because we measure the <strong>offset</strong>, not the visual width. Terminal display is a separate concern
+    (chapter 6's table output handles full-width characters).
+  </p>
+
+  <h2 id="design">Why don't keywords get their own token type?</h2>
+  <p>
+    Some tutorials tag <code>SELECT</code> as <code>KEYWORD</code> and everything else as <code>IDENTIFIER</code>.
+    We deliberately don't: everything is a <code>word</code>, and the layer above checks it with <code>upper</code>.
+    The benefits:
+  </p>
+  <ul>
+    <li>The tokenizer doesn't need to know how many keywords SQL has (though we still keep a keyword table for the parser).</li>
+    <li>Supporting "use a double-quoted reserved word as a column name" is easy: a word with <code>quoted: true</code> doesn't take part in keyword comparison.</li>
+    <li>When new syntax arrives later (for example <code>RETURNING</code>), the tokenizer barely changes.</li>
+  </ul>
+
+  <div class="callout callout--note">
+    <p class="callout__title">Why not just split with a regular expression?</p>
+    <p>
+      <code>sql.split(/\s+/)</code> or one big regex works for simple cases, but you'll soon hit whitespace inside
+      strings (<code>'hello world'</code>), semicolons inside comments, escape characters, and so on.
+      A hand-written scanner is a bit more code, but every branch is visible and errors are easy to locate.
+    </p>
+  </div>
+
+  <h2 id="cli">Make the tokenizer visible in the REPL</h2>
+  <p>
+    Add a <code>.tokens &lt;SQL&gt;</code> command to the CLI. It's a great debugging tool: when the parser misbehaves
+    later, check the tokens first — that usually narrows things down.
+  </p>
+  <pre class="code"><code>.tokens SELECT name FROM books WHERE price &gt;= 100
+word(SELECT) word(name) word(FROM) word(books) word(WHERE) word(price) op(&gt;=) number(100) eof</code></pre>
+
+  <h2 id="tests">Tests: write them first, then trust the code</h2>
+  <p>
+    The tokenizer is the easiest part to unit-test: the input is a string, the output is plain data, and there are no
+    side effects. The tests below cover keyword case, number formats, string escaping, comments, positions, and errors.
+  </p>
+
+  <!-- include tests/tokenizer.test.js step=02 title="tests/tokenizer.test.js" -->
+
+  <div class="checkpoint">
+    <p class="checkpoint__title">Checkpoint — all 14 tests pass</p>
+    <pre class="code"><code>node --test tests/tokenizer.test.js</code></pre>
+    <p class="checkpoint__expect">ℹ tests 14
+ℹ pass 14
+ℹ fail 0</p>
+    <p>Then try <code>.tokens SELECT 1 + 2;</code> in the REPL.</p>
+  </div>
+
+  <h2 id="recap">Chapter recap</h2>
+  <ul>
+    <li>Lexing cuts the character stream into tokens and records their offset / line / column.</li>
+    <li>Comments and whitespace produce no tokens; strings are decoded; keywords keep both the raw and the uppercase form.</li>
+    <li>Errors carry a position, so users know where to fix things.</li>
+  </ul>
+
+  <div class="exercise">
+    <p class="exercise__title">Exercises</p>
+    <ol>
+      <li>Support hexadecimal numbers (<code>0xFF</code>): add a check in the number branch and write a test.</li>
+      <li>Support <code>#</code> single-line comments (MySQL style). Think about where to check so it doesn't collide with operators.</li>
+      <li>If a string contains a newline, does the line counter update correctly? Write a test to verify.</li>
+    </ol>
+  </div>
+
+  <h2 id="vocab">Chapter glossary</h2>
+  <dl class="vocab">
+    <dt>Lexer / Tokenizer</dt><dd>Turns the character stream into tokens.</dd>
+    <dt>Token</dt><dd>The smallest syntactic unit, with a type and a position.</dd>
+    <dt>Escape</dt><dd>A special notation for a special character, for example <code>''</code> inside a SQL string means one single quote.</dd>
+  </dl>
+</article>

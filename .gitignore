@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Local databases and transaction journals
+*.db
+*.db-journal
+*.journal
+*.sqlite
+*.sqlite3
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local scratch files (screenshots, browser profiles, generated test output)
+docs/_shots/
+*.log

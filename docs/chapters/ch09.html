@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chapter 9 · JOIN — Building an SQL database engine from scratch</title>
+  <meta name="description" content="INNER / LEFT JOIN, ON conditions, ambiguous-column errors, and why JOIN is slow.">
+  <meta property="og:title" content="Chapter 9 · JOIN — Building an SQL database engine from scratch">
+  <meta property="og:description" content="INNER / LEFT JOIN, ON conditions, ambiguous-column errors, and why JOIN is slow.">
+  <meta property="og:type" content="article">
+  <meta property="og:locale" content="en_US">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("sql-theme");
+        document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script defer src="../assets/toc.js"></script>
+  <script defer src="../assets/site.js"></script>
+</head>
+<body class="page page--chapter" data-page-kind="chapter"
+      data-prev-url="../chapters/ch08.html" data-next-url="../chapters/ch10.html">
+
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <div id="reading-progress" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="site-header__left">
+      <button id="sidebar-toggle" class="icon-btn" type="button"
+              aria-label="Open chapter navigation" aria-controls="sidebar" aria-expanded="false">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <path d="M2 4h12M2 8h12M2 12h12" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <a class="brand" href="../index.html">
+        <span class="brand__mark" aria-hidden="true">SQL</span>
+        <span class="brand__name">SQL from Scratch</span>
+      </a>
+      <span class="header-chapter">Chapter 9 · JOIN</span>
+    </div>
+    <div class="site-header__right">
+      <span class="header-progress" data-progress-label>0/10 complete</span>
+      <button id="search-toggle" class="icon-btn icon-btn--search" type="button"
+              aria-label="Search chapters" aria-haspopup="dialog">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <span class="icon-btn__label">Search</span>
+        <span class="kbd-hint">/</span>
+      </button>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
+        <svg class="theme-icon theme-icon--sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="8" cy="8" r="3"/>
+          <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" stroke-linecap="round"/>
+        </svg>
+        <svg class="theme-icon theme-icon--moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M13.4 9.6A5.8 5.8 0 0 1 6.4 2.6a5.8 5.8 0 1 0 7 7Z" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <aside class="sidebar" id="sidebar" aria-label="Chapter navigation">
+    <div class="sidebar__scroll">
+      <p class="sidebar__heading">Chapter Index</p>
+      <ol class="toc-list"><li class="toc-item"><a class="toc-link" href="../chapters/ch01.html"><span class="toc-num">01</span><span class="toc-title">Orientation and skeleton</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch02.html"><span class="toc-num">02</span><span class="toc-title">Lexing</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch03.html"><span class="toc-num">03</span><span class="toc-title">Parsing</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch04.html"><span class="toc-num">04</span><span class="toc-title">Values and types</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch05.html"><span class="toc-num">05</span><span class="toc-title">Storage layer</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch06.html"><span class="toc-num">06</span><span class="toc-title">SELECT pipeline</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch07.html"><span class="toc-num">07</span><span class="toc-title">Aggregates and grouping</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch08.html"><span class="toc-num">08</span><span class="toc-title">Update and delete</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch09.html"><span class="toc-num">09</span><span class="toc-title">JOIN</span></a></li><li class="toc-item"><a class="toc-link" href="../chapters/ch10.html"><span class="toc-num">10</span><span class="toc-title">Persistence and transactions</span></a></li></ol>
+      <p class="sidebar__heading">Tools</p>
+      <nav class="nav-list" aria-label="Tools">
+        <a class="toc-link" href="../playground.html"><span class="toc-num">▸</span><span class="toc-title">SQL Playground</span></a>
+        <a class="toc-link" href="../reference.html"><span class="toc-num">▸</span><span class="toc-title">Syntax Reference</span></a>
+        <a class="toc-link" href="../index.html"><span class="toc-num">▸</span><span class="toc-title">Home &amp; Roadmap</span></a>
+      </nav>
+    </div>
+    <div class="sidebar__foot">
+      <a href="../index.html"><span>Home</span><span>⌂</span></a>
+      <a href="../playground.html"><span>Playground</span><span>⟩</span></a>
+      <a href="../reference.html"><span>Reference</span><span>⌗</span></a>
+      <p class="sidebar__version">SQL engine tutorial · 0.1<br>Zero dependencies · works offline</p>
+    </div>
+  </aside>
+  <div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
+
+  <main id="main" class="layout">
+    <div class="content-column">
+      <aside class="chapter-meta">
+  <h2 class="chapter-meta__title">Chapter info</h2>
+  <ul class="chapter-meta__list">
+    <li><strong>Estimated time</strong> 45 minutes</li>
+    <li><strong>Difficulty</strong> ★★★☆☆</li>
+    <li><strong>What you'll learn</strong> Nested loop JOIN, LEFT JOIN, ambiguous columns, JOIN performance</li>
+    <li><strong>What you'll build</strong> changes to <code>src/engine/query.js</code></li>
+  </ul>
+</aside>
+
+<article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Chapter 09 / JOIN</p>
+    <h1>Connecting two tables: JOIN and nested loops</h1>
+    <p class="chapter-lead">
+      Real databases rarely have just one table: books have authors, orders have customers, comments have
+      articles. JOIN is the operation that pairs rows from two tables by some condition. Its
+      implementation is surprisingly simple — two loops — but that's also where the performance problems
+      start.
+    </p>
+  </header>
+
+  <h2 id="semantics">JOIN semantics</h2>
+  <p>
+    <code>books JOIN authors ON books.author_id = authors.id</code> means: for each row in books, find
+    every authors row whose "author_id equals authors.id" and pair it up. If a book matches two authors
+    (which shouldn't happen in theory, but can without a foreign key constraint), you get two rows.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Type</th><th>Behavior</th><th>Our support</th></tr></thead>
+      <tbody>
+        <tr><td><code>JOIN</code> / <code>INNER JOIN</code></td><td>keep only rows that match on both sides</td><td>✅</td></tr>
+        <tr><td><code>LEFT JOIN</code></td><td>left rows are always kept; an unmatched right side is filled with NULL</td><td>✅</td></tr>
+        <tr><td><code>RIGHT JOIN</code> / <code>FULL JOIN</code></td><td>keep the reverse side, or both sides</td><td>❌ (try it yourself)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="nested-loop">Nested loops: the most obvious implementation</h2>
+  <p>
+    In pseudocode:
+  </p>
+  <pre class="code"><code>for (each row on the left) {
+  let matched = false;
+  for (each row on the right) {
+    if (ON condition holds) {
+      output left + right;
+      matched = true;
+    }
+  }
+  if (!matched &amp;&amp; is LEFT JOIN) {
+    output left + right side all NULL;
+  }
+}</code></pre>
+  <p>
+    Our <code>scan()</code> uses the same idea, except the generator yields one row at a time so we never
+    have to materialize every combination in memory.
+  </p>
+
+  <h2 id="ambiguity">Why do columns need aliases after a JOIN?</h2>
+  <p>
+    Both tables may have <code>id</code>. If you write <code>SELECT id FROM books JOIN authors ...</code>,
+    the engine can't tell which one you mean, and the correct response is to raise:
+  </p>
+  <pre class="code"><code>AMBIGUOUS_COLUMN: ambiguous column name: id exists in both books and authors
+Hint: add a table alias, for example b.id</code></pre>
+  <p>
+    This check was actually written in Chapter 6's <code>evaluateColumn()</code>: it collects all matching
+    sources, reports "column not found" for zero and "ambiguous" for more than one. JOIN is just what
+    makes the situation real.
+  </p>
+
+  <h2 id="patch">Changes to the query pipeline</h2>
+  <p>
+    The changes are concentrated in two places: <code>buildSources()</code> has to collect the JOIN
+    sources (including the duplicate-alias check), and <code>scan()</code> has to run the nested loop.
+    WHERE, projection, grouping, and sorting don't change at all — they just see "rows with more sources".
+  </p>
+
+  <p class="diff__label">src/engine/query.js: step 8 → step 9</p><div class="diff"><pre class="code code--diff"><code><span class="d-ctx">  /**</span>
+<span class="d-ctx">   * SELECT Execution Pipeline</span>
+<span class="d-ctx">   *</span>
+<span class="d-ctx">   * A SELECT goes through these stages in order:</span>
+<span class="d-ctx">   *</span>
+<span class="d-ctx">   *   FROM     find the table and wrap each row as a &quot;source list&quot;</span>
+<span class="d-ctx">   *   JOIN     attach rows from other tables (chapter 9)</span>
+<span class="d-ctx">   *   WHERE    keep only rows whose condition is TRUE</span>
+<span class="d-ctx">   *   GROUP BY group rows (with aggregates but no GROUP BY, the whole table is one group)</span>
+<span class="d-ctx">   *   HAVING   filter groups</span>
+<span class="d-ctx">   *   SELECT   compute the output columns</span>
+<span class="d-ctx">   *   DISTINCT remove duplicate output rows</span>
+<span class="d-ctx">   *   ORDER BY sort</span>
+<span class="d-ctx">   *   LIMIT    take the first N rows</span>
+<span class="d-ctx">   *</span>
+<span class="d-ctx">   * The unit of query execution is a &quot;unit&quot;: it holds a representative row and the group's aggregate state.</span>
+<span class="d-ctx">   * Without grouping, each row is its own unit and the aggregate state is empty.</span>
+<span class="d-ctx">   */</span>
+<span class="d-ctx">  import { SqlError } from &quot;../errors.js&quot;;</span>
+<span class="d-ctx">  import { AGGREGATE_FUNCTIONS, columnLabel, evaluate } from &quot;./expr.js&quot;;</span>
+<span class="d-ctx">  import { createAggregateState } from &quot;./aggregate.js&quot;;</span>
+<span class="d-ctx">  import { compareValues, groupKey, isNull, truthy, typeOf } from &quot;../values.js&quot;;</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  /**</span>
+<span class="d-ctx">   * Execute SELECT and return the query result.</span>
+<span class="d-ctx">   * @param {import(&quot;../database.js&quot;).Database} db</span>
+<span class="d-ctx">   * @param {object} ast the select node from the parser</span>
+<span class="d-ctx">   */</span>
+<span class="d-ctx">  export function executeSelect(db, ast) {</span>
+<span class="d-del">-   if (ast.joins.length &gt; 0) {</span>
+<span class="d-del">-     throw new SqlError(&quot;JOIN is not implemented yet (arrives in chapter 9)&quot;, { code: &quot;NOT_SUPPORTED&quot; });</span>
+<span class="d-del">-   }</span>
+<span class="d-del">- </span>
+<span class="d-ctx">    const sources = buildSources(db, ast);</span>
+<span class="d-ctx">    const rawRows = [...scan(sources)];</span>
+<span class="d-ctx">    const filtered = applyWhere(ast, rawRows);</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    const aggregateExpressions = collectAggregateExpressions(ast);</span>
+<span class="d-ctx">    const isGrouped = ast.groupBy.length &gt; 0 || aggregateExpressions.length &gt; 0;</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    let units = isGrouped</span>
+<span class="d-ctx">      ? buildGroups(ast, filtered, aggregateExpressions)</span>
+<span class="d-ctx">      : filtered.map((row) =&gt; ({ row, state: {} }));</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    if (ast.having) {</span>
+<span class="d-ctx">      units = units.filter((unit) =&gt; truthy(evaluate(ast.having, unit.row, unit.state)));</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    const defs = buildProjection(ast, sources);</span>
+<span class="d-ctx">    const labels = defs.map((def) =&gt; def.label);</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    let projected = units.map((unit) =&gt; ({</span>
+<span class="d-ctx">      unit,</span>
+<span class="d-ctx">      row: unit.row,</span>
+<span class="d-ctx">      labels,</span>
+<span class="d-ctx">      values: projectUnit(defs, unit),</span>
+<span class="d-ctx">    }));</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    if (ast.distinct) projected = dedupe(projected);</span>
+<span class="d-ctx">    if (ast.orderBy.length &gt; 0) projected = sortRows(projected, ast.orderBy);</span>
+<span class="d-ctx">    projected = applyLimit(projected, ast);</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    return {</span>
+<span class="d-ctx">      type: &quot;select&quot;,</span>
+<span class="d-ctx">      columns: describeColumns(defs, projected),</span>
+<span class="d-ctx">      rows: projected.map((item) =&gt; item.values),</span>
+<span class="d-ctx">      rowCount: projected.length,</span>
+<span class="d-ctx">    };</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  // ---------------------------------------------------------------------------</span>
+<span class="d-ctx">  // Sources and scanning</span>
+<span class="d-ctx">  // ---------------------------------------------------------------------------</span>
+<span class="d-ctx">  </span>
+<span class="d-del">- /** Build the source list: [{ alias, table }]. */</span>
+<span class="d-add">+ /**</span>
+<span class="d-add">+  * Build the source list.</span>
+<span class="d-add">+  *</span>
+<span class="d-add">+  * The first source is the FROM table; later sources come from JOIN.</span>
+<span class="d-add">+  * kind is &quot;base&quot;, &quot;inner&quot;, or &quot;left&quot;; on is the JOIN condition (may be absent).</span>
+<span class="d-add">+  */</span>
+<span class="d-ctx">  function buildSources(db, ast) {</span>
+<span class="d-ctx">    if (!ast.from) return [];</span>
+<span class="d-del">-   const alias = ast.from.alias ?? ast.from.name;</span>
+<span class="d-del">-   return [{ alias, table: db.getTable(ast.from.name) }];</span>
+<span class="d-add">+   const baseAlias = ast.from.alias ?? ast.from.name;</span>
+<span class="d-add">+   const sources = [</span>
+<span class="d-add">+     { alias: baseAlias, table: db.getTable(ast.from.name), kind: &quot;base&quot;, on: null },</span>
+<span class="d-add">+   ];</span>
+<span class="d-add">+ </span>
+<span class="d-add">+   for (const join of ast.joins) {</span>
+<span class="d-add">+     const alias = join.table.alias ?? join.table.name;</span>
+<span class="d-add">+     if (sources.some((source) =&gt; source.alias.toLowerCase() === alias.toLowerCase())) {</span>
+<span class="d-add">+       throw new SqlError(&quot;Duplicate table alias: &quot; + alias, {</span>
+<span class="d-add">+         code: &quot;SCHEMA_ERROR&quot;,</span>
+<span class="d-add">+         hint: &quot;When joining the same table twice, use different aliases, e.g. JOIN books b2 ON ...&quot;,</span>
+<span class="d-add">+       });</span>
+<span class="d-add">+     }</span>
+<span class="d-add">+     sources.push({</span>
+<span class="d-add">+       alias,</span>
+<span class="d-add">+       table: db.getTable(join.table.name),</span>
+<span class="d-add">+       kind: join.kind,</span>
+<span class="d-add">+       on: join.on,</span>
+<span class="d-add">+     });</span>
+<span class="d-add">+   }</span>
+<span class="d-add">+   return sources;</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  /**</span>
+<span class="d-del">-  * Scan the table, turning each row into a source entry.</span>
+<span class="d-del">-  * A query without FROM (SELECT 1 + 1) produces one row with an empty source list.</span>
+<span class="d-add">+  * Scan tables and execute JOIN to produce combinations of source lists.</span>
+<span class="d-add">+  *</span>
+<span class="d-add">+  * JOIN is implemented as a nested loop join:</span>
+<span class="d-add">+  * For each row on the left, scan the right table and combine rows that satisfy the ON condition.</span>
+<span class="d-add">+  * This is an O(left rows x right rows) brute-force approach, but it is the easiest to understand;</span>
+<span class="d-add">+  * To optimize later, index the JOIN columns or switch to a hash join.</span>
+<span class="d-add">+  *</span>
+<span class="d-add">+  * LEFT JOIN differs in that a row is still emitted when no match is found on the right,</span>
+<span class="d-add">+  * with all right-side columns filled with NULL.</span>
+<span class="d-ctx">   */</span>
+<span class="d-ctx">  function* scan(sources) {</span>
+<span class="d-ctx">    if (sources.length === 0) {</span>
+<span class="d-ctx">      yield [];</span>
+<span class="d-ctx">      return;</span>
+<span class="d-ctx">    }</span>
+<span class="d-del">-   const [source] = sources;</span>
+<span class="d-del">-   for (const values of source.table.all()) {</span>
+<span class="d-del">-     yield [{ alias: source.alias, table: source.table, values }];</span>
+<span class="d-add">+ </span>
+<span class="d-add">+   const base = sources[0];</span>
+<span class="d-add">+   for (const baseValues of base.table.all()) {</span>
+<span class="d-add">+     let rows = [[{ alias: base.alias, table: base.table, values: baseValues }]];</span>
+<span class="d-add">+ </span>
+<span class="d-add">+     for (let i = 1; i &lt; sources.length; i++) {</span>
+<span class="d-add">+       const source = sources[i];</span>
+<span class="d-add">+       const nextRows = [];</span>
+<span class="d-add">+       for (const row of rows) {</span>
+<span class="d-add">+         let matched = false;</span>
+<span class="d-add">+         for (const rightValues of source.table.all()) {</span>
+<span class="d-add">+           const candidate = [</span>
+<span class="d-add">+             ...row,</span>
+<span class="d-add">+             { alias: source.alias, table: source.table, values: rightValues },</span>
+<span class="d-add">+           ];</span>
+<span class="d-add">+           if (source.on &amp;&amp; !truthy(evaluate(source.on, candidate, {}))) continue;</span>
+<span class="d-add">+           nextRows.push(candidate);</span>
+<span class="d-add">+           matched = true;</span>
+<span class="d-add">+         }</span>
+<span class="d-add">+         if (!matched &amp;&amp; source.kind === &quot;left&quot;) {</span>
+<span class="d-add">+           nextRows.push([</span>
+<span class="d-add">+             ...row,</span>
+<span class="d-add">+             { alias: source.alias, table: source.table, values: null },</span>
+<span class="d-add">+           ]);</span>
+<span class="d-add">+         }</span>
+<span class="d-add">+       }</span>
+<span class="d-add">+       rows = nextRows;</span>
+<span class="d-add">+     }</span>
+<span class="d-add">+ </span>
+<span class="d-add">+     for (const row of rows) yield row;</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  function applyWhere(ast, rows) {</span>
+<span class="d-ctx">    if (!ast.where) return rows;</span>
+<span class="d-ctx">    const result = [];</span>
+<span class="d-ctx">    for (const row of rows) {</span>
+<span class="d-ctx">      // Three-valued logic: keep only TRUE (NULL / UNKNOWN count as not satisfied)</span>
+<span class="d-ctx">      if (truthy(evaluate(ast.where, row, {}))) result.push(row);</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">    return result;</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  // ---------------------------------------------------------------------------</span>
+<span class="d-ctx">  // Grouping and aggregation</span>
+<span class="d-ctx">  // ---------------------------------------------------------------------------</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  /** Collect all aggregate expressions in SELECT / HAVING / ORDER BY (deduplicated). */</span>
+<span class="d-ctx">  function collectAggregateExpressions(ast) {</span>
+<span class="d-ctx">    const found = new Map();</span>
+<span class="d-ctx">    const visit = (node) =&gt; {</span>
+<span class="d-ctx">      if (node &amp;&amp; typeof node === &quot;object&quot; &amp;&amp; node.type === &quot;call&quot; &amp;&amp; AGGREGATE_FUNCTIONS.has(node.name.toUpperCase())) {</span>
+<span class="d-ctx">        found.set(JSON.stringify(node), node);</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">    };</span>
+<span class="d-ctx">    walk(ast.columns.map((item) =&gt; item.expr), visit);</span>
+<span class="d-ctx">    walk(ast.having, visit);</span>
+<span class="d-ctx">    walk(ast.orderBy.map((order) =&gt; order.expr), visit);</span>
+<span class="d-ctx">    return [...found.values()];</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  function walk(node, visit) {</span>
+<span class="d-ctx">    if (!node || typeof node !== &quot;object&quot;) return;</span>
+<span class="d-ctx">    if (Array.isArray(node)) {</span>
+<span class="d-ctx">      for (const item of node) walk(item, visit);</span>
+<span class="d-ctx">      return;</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">    visit(node);</span>
+<span class="d-ctx">    for (const value of Object.values(node)) {</span>
+<span class="d-ctx">      if (value &amp;&amp; typeof value === &quot;object&quot;) walk(value, visit);</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  /**</span>
+<span class="d-ctx">   * Group rows according to GROUP BY.</span>
+<span class="d-ctx">   * With aggregates but no GROUP BY (e.g. SELECT COUNT(*) FROM books),</span>
+<span class="d-ctx">   * the whole table is one group; even with no rows, emit an empty group so COUNT(*) is 0.</span>
+<span class="d-ctx">   */</span>
+<span class="d-ctx">  function buildGroups(ast, rows, aggregateExpressions) {</span>
+<span class="d-ctx">    const groups = [];</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    if (ast.groupBy.length === 0) {</span>
+<span class="d-ctx">      groups.push({ row: rows[0] ?? [], rows });</span>
+<span class="d-ctx">    } else {</span>
+<span class="d-ctx">      const index = new Map();</span>
+<span class="d-ctx">      for (const row of rows) {</span>
+<span class="d-ctx">        const keyValues = ast.groupBy.map((expr) =&gt; evaluate(expr, row, {}));</span>
+<span class="d-ctx">        const key = groupKey(keyValues);</span>
+<span class="d-ctx">        let group = index.get(key);</span>
+<span class="d-ctx">        if (!group) {</span>
+<span class="d-ctx">          group = { row, rows: [] };</span>
+<span class="d-ctx">          index.set(key, group);</span>
+<span class="d-ctx">          groups.push(group);</span>
+<span class="d-ctx">        }</span>
+<span class="d-ctx">        group.rows.push(row);</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    for (const group of groups) {</span>
+<span class="d-ctx">      group.state = createAggregateState(aggregateExpressions, group.rows);</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">    return groups;</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  // ---------------------------------------------------------------------------</span>
+<span class="d-ctx">  // Output columns</span>
+<span class="d-ctx">  // ---------------------------------------------------------------------------</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  /**</span>
+<span class="d-ctx">   * Determine the output columns. SELECT * expands into multiple column definitions;</span>
+<span class="d-ctx">   * other expressions use their alias or a derived name.</span>
+<span class="d-ctx">   */</span>
+<span class="d-ctx">  function buildProjection(ast, sources) {</span>
+<span class="d-ctx">    const defs = [];</span>
+<span class="d-ctx">    for (const item of ast.columns) {</span>
+<span class="d-ctx">      if (item.expr.type === &quot;star&quot;) {</span>
+<span class="d-ctx">        const targets = item.expr.table</span>
+<span class="d-ctx">          ? sources.filter((source) =&gt; source.alias.toLowerCase() === item.expr.table.toLowerCase())</span>
+<span class="d-ctx">          : sources;</span>
+<span class="d-ctx">        if (targets.length === 0) {</span>
+<span class="d-ctx">          throw new SqlError(&quot;Table not found: &quot; + (item.expr.table ?? &quot;(no FROM)&quot;), {</span>
+<span class="d-ctx">            code: &quot;SCHEMA_ERROR&quot;,</span>
+<span class="d-ctx">            hint: &quot;SELECT * requires FROM.&quot;,</span>
+<span class="d-ctx">          });</span>
+<span class="d-ctx">        }</span>
+<span class="d-ctx">        for (const source of targets) {</span>
+<span class="d-ctx">          for (const column of source.table.columns) {</span>
+<span class="d-ctx">            defs.push({</span>
+<span class="d-ctx">              kind: &quot;source-column&quot;,</span>
+<span class="d-ctx">              alias: source.alias,</span>
+<span class="d-ctx">              columnName: column.name,</span>
+<span class="d-ctx">              label: column.name,</span>
+<span class="d-ctx">            });</span>
+<span class="d-ctx">          }</span>
+<span class="d-ctx">        }</span>
+<span class="d-ctx">        continue;</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      defs.push({</span>
+<span class="d-ctx">        kind: &quot;expression&quot;,</span>
+<span class="d-ctx">        expr: item.expr,</span>
+<span class="d-ctx">        label: item.alias ?? columnLabel(item.expr),</span>
+<span class="d-ctx">      });</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">    if (defs.length === 0) {</span>
+<span class="d-ctx">      throw new SqlError(&quot;SELECT requires at least one column&quot;, { code: &quot;SYNTAX_ERROR&quot; });</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">    return defs;</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  function projectUnit(defs, unit) {</span>
+<span class="d-ctx">    return defs.map((def) =&gt; {</span>
+<span class="d-ctx">      if (def.kind === &quot;source-column&quot;) {</span>
+<span class="d-ctx">        const source = unit.row.find((item) =&gt; item.alias === def.alias);</span>
+<span class="d-ctx">        if (!source || !source.values) return null;</span>
+<span class="d-ctx">        return source.values[def.columnName] ?? null;</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      return evaluate(def.expr, unit.row, unit.state);</span>
+<span class="d-ctx">    });</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  /** Output column name and type (the type comes from the first non-NULL value). */</span>
+<span class="d-ctx">  function describeColumns(defs, projected) {</span>
+<span class="d-ctx">    return defs.map((def, index) =&gt; {</span>
+<span class="d-ctx">      let type = &quot;null&quot;;</span>
+<span class="d-ctx">      for (const item of projected) {</span>
+<span class="d-ctx">        if (!isNull(item.values[index])) {</span>
+<span class="d-ctx">          type = typeOf(item.values[index]);</span>
+<span class="d-ctx">          break;</span>
+<span class="d-ctx">        }</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      return { name: def.label, type };</span>
+<span class="d-ctx">    });</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  function dedupe(projected) {</span>
+<span class="d-ctx">    const seen = new Set();</span>
+<span class="d-ctx">    const result = [];</span>
+<span class="d-ctx">    for (const item of projected) {</span>
+<span class="d-ctx">      const key = groupKey(item.values);</span>
+<span class="d-ctx">      if (seen.has(key)) continue;</span>
+<span class="d-ctx">      seen.add(key);</span>
+<span class="d-ctx">      result.push(item);</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">    return result;</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  // ---------------------------------------------------------------------------</span>
+<span class="d-ctx">  // Sorting and LIMIT</span>
+<span class="d-ctx">  // ---------------------------------------------------------------------------</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  /**</span>
+<span class="d-ctx">   * Sorting. ORDER BY accepts source columns, output column aliases, or aggregate functions:</span>
+<span class="d-ctx">   *</span>
+<span class="d-ctx">   *   SELECT author, COUNT(*) AS n FROM books GROUP BY author ORDER BY n DESC</span>
+<span class="d-ctx">   */</span>
+<span class="d-ctx">  function sortRows(projected, orderBy) {</span>
+<span class="d-ctx">    const decorated = projected.map((item) =&gt; ({</span>
+<span class="d-ctx">      ...item,</span>
+<span class="d-ctx">      keys: orderBy.map((order) =&gt; orderValue(order.expr, item)),</span>
+<span class="d-ctx">    }));</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    decorated.sort((left, right) =&gt; {</span>
+<span class="d-ctx">      for (let i = 0; i &lt; orderBy.length; i++) {</span>
+<span class="d-ctx">        const direction = orderBy[i].direction === &quot;desc&quot; ? -1 : 1;</span>
+<span class="d-ctx">        const compared = compareValues(left.keys[i], right.keys[i]);</span>
+<span class="d-ctx">        if (compared !== 0) return compared * direction;</span>
+<span class="d-ctx">      }</span>
+<span class="d-ctx">      return 0;</span>
+<span class="d-ctx">    });</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">    return decorated;</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  function orderValue(expr, item) {</span>
+<span class="d-ctx">    // Check for an output column alias first (SQL allows aliases in ORDER BY).</span>
+<span class="d-ctx">    if (expr.type === &quot;column&quot; &amp;&amp; !expr.table) {</span>
+<span class="d-ctx">      const index = item.labels.findIndex((label) =&gt; label.toLowerCase() === expr.name.toLowerCase());</span>
+<span class="d-ctx">      if (index &gt;= 0) return item.values[index];</span>
+<span class="d-ctx">    }</span>
+<span class="d-ctx">    return evaluate(expr, item.row, item.unit.state);</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+<span class="d-ctx">  function applyLimit(projected, ast) {</span>
+<span class="d-ctx">    const offset = ast.offset ?? 0;</span>
+<span class="d-ctx">    const limit = ast.limit;</span>
+<span class="d-ctx">    if (limit === null &amp;&amp; offset === 0) return projected;</span>
+<span class="d-ctx">    const end = limit === null ? projected.length : offset + limit;</span>
+<span class="d-ctx">    return projected.slice(offset, end);</span>
+<span class="d-ctx">  }</span>
+<span class="d-ctx">  </span>
+</code></pre></div>
+
+  <div class="callout callout--warn">
+    <p class="callout__title">Performance: O(left × right)</p>
+    <p>
+      With 10,000 books and 1,000 authors, the nested loop performs 10 million comparisons. Real databases
+      use an <strong>index</strong> (B-tree) or a <strong>hash table</strong> to take "find the matching
+      rows" from O(n) down to O(log n) or O(1). That's why JOIN columns are worth indexing.
+    </p>
+  </div>
+
+  <h2 id="tests">Tests: JOIN semantic edges</h2>
+  <p>
+    The tests cover INNER / LEFT, multiple JOINs, JOIN + aggregation, ambiguous columns, duplicate
+    aliases, cross joins without ON, and self joins. Those are the combinations you run into in practice.
+  </p>
+
+  <div class="file"><div class="file__head"><span class="file__name">tests/join.test.js</span><span class="file__meta">JavaScript · 84 lines · step 9</span></div><pre class="code"><code><span class="tk-kw">import</span> <span class="tk-ident">test</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:test&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-ident">assert</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;node:assert/strict&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">Database</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;../src/database.js&quot;</span><span class="tk-op">;</span>
+<span class="tk-kw">import</span> <span class="tk-op">{</span> <span class="tk-ident">SqlError</span> <span class="tk-op">}</span> <span class="tk-kw">from</span> <span class="tk-str">&quot;../src/errors.js&quot;</span><span class="tk-op">;</span>
+
+<span class="tk-kw">function</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-kw">new</span> <span class="tk-fn">Database</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT);&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT, author_id INTEGER, price REAL);&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;INSERT INTO authors VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Carol');&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;INSERT INTO books VALUES (1, 'JS', 1, 100), (2, 'DB', 1, 200), (3, 'OS', 2, 150);&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">return</span> <span class="tk-ident">db</span><span class="tk-op">;</span>
+<span class="tk-op">}</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;INNER JOIN: keep only rows present on both sides&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">result</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">`SELECT books.title, authors.name
+    FROM books JOIN authors ON books.author_id = authors.id
+    ORDER BY books.id`</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-op">[</span><span class="tk-str">&quot;JS&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;Alice&quot;</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;DB&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;Alice&quot;</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;OS&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;Bob&quot;</span><span class="tk-op">]</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">columns</span><span class="tk-op">.</span><span class="tk-fn">map</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-ident">c</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">c</span><span class="tk-op">.</span><span class="tk-ident">name</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;title&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;name&quot;</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;LEFT JOIN: keep rows with no right match, filling columns with NULL&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">result</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">`SELECT authors.name, books.title
+    FROM authors LEFT JOIN books ON books.author_id = authors.id
+    ORDER BY authors.id, books.id`</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-op">[</span>
+    <span class="tk-op">[</span><span class="tk-str">&quot;Alice&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;JS&quot;</span><span class="tk-op">]</span><span class="tk-op">,</span>
+    <span class="tk-op">[</span><span class="tk-str">&quot;Alice&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;DB&quot;</span><span class="tk-op">]</span><span class="tk-op">,</span>
+    <span class="tk-op">[</span><span class="tk-str">&quot;Bob&quot;</span><span class="tk-op">,</span> <span class="tk-str">&quot;OS&quot;</span><span class="tk-op">]</span><span class="tk-op">,</span>
+    <span class="tk-op">[</span><span class="tk-str">&quot;Carol&quot;</span><span class="tk-op">,</span> <span class="tk-kw">null</span><span class="tk-op">]</span><span class="tk-op">,</span>
+  <span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;JOIN + WHERE + aggregate + GROUP BY&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">result</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">`SELECT authors.name, COUNT(*) AS n, SUM(books.price) AS total
+    FROM books JOIN authors ON books.author_id = authors.id
+    GROUP BY authors.name
+    ORDER BY total DESC`</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-op">[</span><span class="tk-str">&quot;Alice&quot;</span><span class="tk-op">,</span> <span class="tk-num">2</span><span class="tk-op">,</span> <span class="tk-num">300</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;Bob&quot;</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">,</span> <span class="tk-num">150</span><span class="tk-op">]</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;multiple JOINs&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;CREATE TABLE reviews (book_id INTEGER, stars INTEGER);&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">exec</span><span class="tk-op">(</span><span class="tk-str">&quot;INSERT INTO reviews VALUES (1, 5), (1, 4), (2, 3);&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">result</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">`SELECT books.title, COUNT(*) AS reviews
+    FROM books
+    JOIN authors ON books.author_id = authors.id
+    JOIN reviews ON reviews.book_id = books.id
+    GROUP BY books.title
+    ORDER BY reviews DESC, books.title`</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">deepEqual</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-op">[</span><span class="tk-str">&quot;JS&quot;</span><span class="tk-op">,</span> <span class="tk-num">2</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-op">[</span><span class="tk-str">&quot;DB&quot;</span><span class="tk-op">,</span> <span class="tk-num">1</span><span class="tk-op">]</span><span class="tk-op">]</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;identically named columns in a JOIN must be qualified&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">throws</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT id FROM books JOIN authors ON books.author_id = authors.id&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-ident">err</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+    <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">ok</span><span class="tk-op">(</span><span class="tk-ident">err</span> <span class="tk-kw">instanceof</span> <span class="tk-ident">SqlError</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">err</span><span class="tk-op">.</span><span class="tk-ident">code</span><span class="tk-op">,</span> <span class="tk-str">&quot;AMBIGUOUS_COLUMN&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+    <span class="tk-kw">return</span> <span class="tk-kw">true</span><span class="tk-op">;</span>
+  <span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;duplicate table aliases are an error&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">throws</span><span class="tk-op">(</span><span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT * FROM books JOIN books ON books.id = books.id&quot;</span><span class="tk-op">)</span><span class="tk-op">,</span> <span class="tk-op">/</span><span class="tk-ident">Duplicate</span> <span class="tk-ident">table</span> <span class="tk-ident">alias</span><span class="tk-op">/</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;a JOIN without ON is a cross join&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">result</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">&quot;SELECT COUNT(*) FROM authors JOIN books&quot;</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">rows</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">[</span><span class="tk-num">0</span><span class="tk-op">]</span><span class="tk-op">,</span> <span class="tk-num">9</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span>
+
+<span class="tk-fn">test</span><span class="tk-op">(</span><span class="tk-str">&quot;a self join requires an alias&quot;</span><span class="tk-op">,</span> <span class="tk-op">(</span><span class="tk-op">)</span> <span class="tk-op">=</span><span class="tk-op">&gt;</span> <span class="tk-op">{</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">db</span> <span class="tk-op">=</span> <span class="tk-fn">makeDb</span><span class="tk-op">(</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-kw">const</span> <span class="tk-ident">result</span> <span class="tk-op">=</span> <span class="tk-ident">db</span><span class="tk-op">.</span><span class="tk-fn">query</span><span class="tk-op">(</span><span class="tk-str">`SELECT a.title AS first, b.title AS second
+    FROM books a JOIN books b ON a.id &lt; b.id`</span><span class="tk-op">)</span><span class="tk-op">;</span>
+  <span class="tk-ident">assert</span><span class="tk-op">.</span><span class="tk-fn">equal</span><span class="tk-op">(</span><span class="tk-ident">result</span><span class="tk-op">.</span><span class="tk-ident">rowCount</span><span class="tk-op">,</span> <span class="tk-num">3</span><span class="tk-op">)</span><span class="tk-op">;</span>
+<span class="tk-op">}</span><span class="tk-op">)</span><span class="tk-op">;</span></code></pre></div>
+
+  <div class="checkpoint">
+    <p class="checkpoint__title">Checkpoint — two tables connected</p>
+    <pre class="code"><code>node --test tests/join.test.js</code></pre>
+    <p class="checkpoint__expect">ℹ tests 8
+ℹ pass 8
+ℹ fail 0</p>
+  </div>
+
+  <h2 id="recap">Chapter recap</h2>
+  <ul>
+    <li>JOIN is implemented with nested loops: for each left row, scan the right side.</li>
+    <li>LEFT JOIN keeps the left row when the right side has no match, filling right columns with NULL.</li>
+    <li>Columns with the same name need an alias; otherwise the engine raises AMBIGUOUS_COLUMN.</li>
+    <li>JOIN's performance bottleneck is O(n×m); indexes are the next step.</li>
+  </ul>
+
+  <div class="exercise">
+    <p class="exercise__title">Exercises</p>
+    <ol>
+      <li>Implement <code>RIGHT JOIN</code>: swap the two sides, do a LEFT JOIN, then reorder the columns.</li>
+      <li>Support <code>JOIN ... USING (id)</code>: it means equality on the same-named columns, and the output keeps only one copy.</li>
+      <li>Run a small experiment: with 5,000 rows, compare the time for a JOIN against narrowing the rows with WHERE first and then joining.</li>
+    </ol>
+  </div>
+
+  <h2 id="vocab">Chapter glossary</h2>
+  <dl class="vocab">
+    <dt>Nested loop join</dt><dd>An implementation that compares the two sides with two nested loops.</dd>
+    <dt>Driving table</dt><dd>The table scanned by the outer loop; usually the smaller one, or the one with fewer rows after filtering.</dd>
+    <dt>Cartesian product</dt><dd>A JOIN without an ON condition, producing left-rows × right-rows output.</dd>
+  </dl>
+</article>
+
+
+      <footer class="chapter-foot site-chapter-foot">
+        <div class="chapter-foot__inner">
+          <p class="chapter-foot__label">Finished this chapter? Mark it complete and the progress stays in this browser.</p>
+          <button id="mark-complete" class="btn btn--complete" type="button"
+                  data-chapter="" aria-pressed="false">Mark chapter complete</button>
+        </div>
+        <nav class="pager" aria-label="Previous and next chapter">
+          <a class="pager-link pager-link--prev" href="../chapters/ch08.html"><span class="pager-link__meta">Previous chapter</span><span class="pager-link__title">Chapter 8 · Update and delete</span></a>
+          <a class="pager-link pager-link--next" href="../chapters/ch10.html"><span class="pager-link__meta">Next chapter</span><span class="pager-link__title">Chapter 10 · Persistence and transactions</span></a>
+        </nav>
+      </footer>
+    </div>
+    <aside id="page-toc" class="page-toc" aria-label="On this page"></aside>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <p><strong>Build a SQL Database Engine from Scratch</strong> — ten chapters that start with a single character and end with a database that persists, queries, and transacts.</p>
+        <p class="footer-mono">Zero dependencies · Node.js only · built by hand</p>
+      </div>
+      <div>
+        <p class="footer-mono"><a href="../playground.html">SQL Playground</a> · <a href="../reference.html">Syntax Reference</a> · <a href="../index.html">Home</a></p>
+        <p class="footer-mono">Switch between light and dark themes in the top-right corner.</p>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="search-overlay" role="dialog" aria-modal="true" aria-label="Search chapters" aria-hidden="true">
+    <div class="search-panel">
+      <div class="search-panel__head">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <input id="search-input" type="search" placeholder="Search chapter titles or summaries…"
+               autocomplete="off" spellcheck="false" aria-label="Search chapters">
+        <span class="search-panel__esc">Esc</span>
+      </div>
+      <ul class="search-results" id="search-results"></ul>
+      <div class="search-panel__foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> select</span>
+        <span><kbd>Enter</kbd> open</span>
+        <span><kbd>/</kbd> open search</span>
+        <span><kbd>[</kbd><kbd>]</kbd> previous / next chapter</span>
+      </div>
+    </div>
+  </div>
+
+  <noscript>
+    <p style="max-width:74ch;margin:1rem auto;padding:0 1rem;font-family:monospace;color:#6e675c">
+      The main content of this site is readable without JavaScript; search, theme switching, and progress tracking need it enabled.
+    </p>
+  </noscript>
+</body>
+</html>

@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SQL syntax reference — Building an SQL database engine from scratch</title>
+  <meta name="description" content="Quick reference for the SQL syntax, functions, error codes, and CLI commands this teaching database supports.">
+  <meta property="og:title" content="SQL syntax reference — Building an SQL database engine from scratch">
+  <meta property="og:description" content="Quick reference for the SQL syntax, functions, error codes, and CLI commands this teaching database supports.">
+  <meta property="og:type" content="article">
+  <meta property="og:locale" content="en_US">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("sql-theme");
+        document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="assets/style.css">
+  <script defer src="assets/toc.js"></script>
+  <script defer src="assets/site.js"></script>
+</head>
+<body class="page page--reference" data-page-kind="reference"
+      data-prev-url="chapters/ch10.html" data-next-url="">
+
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <div id="reading-progress" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="site-header__left">
+      <button id="sidebar-toggle" class="icon-btn" type="button"
+              aria-label="Open chapter navigation" aria-controls="sidebar" aria-expanded="false">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <path d="M2 4h12M2 8h12M2 12h12" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <a class="brand" href="index.html">
+        <span class="brand__mark" aria-hidden="true">SQL</span>
+        <span class="brand__name">SQL from Scratch</span>
+      </a>
+      <span class="header-chapter">Appendix · syntax reference</span>
+    </div>
+    <div class="site-header__right">
+      <span class="header-progress" data-progress-label>0/10 complete</span>
+      <button id="search-toggle" class="icon-btn icon-btn--search" type="button"
+              aria-label="Search chapters" aria-haspopup="dialog">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <span class="icon-btn__label">Search</span>
+        <span class="kbd-hint">/</span>
+      </button>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
+        <svg class="theme-icon theme-icon--sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="8" cy="8" r="3"/>
+          <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1" stroke-linecap="round"/>
+        </svg>
+        <svg class="theme-icon theme-icon--moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M13.4 9.6A5.8 5.8 0 0 1 6.4 2.6a5.8 5.8 0 1 0 7 7Z" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <aside class="sidebar" id="sidebar" aria-label="Chapter navigation">
+    <div class="sidebar__scroll">
+      <p class="sidebar__heading">Chapter Index</p>
+      <ol class="toc-list"><li class="toc-item"><a class="toc-link" href="chapters/ch01.html"><span class="toc-num">01</span><span class="toc-title">Orientation and skeleton</span></a></li><li class="toc-item"><a class="toc-link" href="chapters/ch02.html"><span class="toc-num">02</span><span class="toc-title">Lexing</span></a></li><li class="toc-item"><a class="toc-link" href="chapters/ch03.html"><span class="toc-num">03</span><span class="toc-title">Parsing</span></a></li><li class="toc-item"><a class="toc-link" href="chapters/ch04.html"><span class="toc-num">04</span><span class="toc-title">Values and types</span></a></li><li class="toc-item"><a class="toc-link" href="chapters/ch05.html"><span class="toc-num">05</span><span class="toc-title">Storage layer</span></a></li><li class="toc-item"><a class="toc-link" href="chapters/ch06.html"><span class="toc-num">06</span><span class="toc-title">SELECT pipeline</span></a></li><li class="toc-item"><a class="toc-link" href="chapters/ch07.html"><span class="toc-num">07</span><span class="toc-title">Aggregates and grouping</span></a></li><li class="toc-item"><a class="toc-link" href="chapters/ch08.html"><span class="toc-num">08</span><span class="toc-title">Update and delete</span></a></li><li class="toc-item"><a class="toc-link" href="chapters/ch09.html"><span class="toc-num">09</span><span class="toc-title">JOIN</span></a></li><li class="toc-item"><a class="toc-link" href="chapters/ch10.html"><span class="toc-num">10</span><span class="toc-title">Persistence and transactions</span></a></li></ol>
+      <p class="sidebar__heading">Tools</p>
+      <nav class="nav-list" aria-label="Tools">
+        <a class="toc-link" href="playground.html"><span class="toc-num">▸</span><span class="toc-title">SQL Playground</span></a>
+        <a class="toc-link" href="reference.html"><span class="toc-num">▸</span><span class="toc-title">Syntax Reference</span></a>
+        <a class="toc-link" href="index.html"><span class="toc-num">▸</span><span class="toc-title">Home &amp; Roadmap</span></a>
+      </nav>
+    </div>
+    <div class="sidebar__foot">
+      <a href="index.html"><span>Home</span><span>⌂</span></a>
+      <a href="playground.html"><span>Playground</span><span>⟩</span></a>
+      <a href="reference.html"><span>Reference</span><span>⌗</span></a>
+      <p class="sidebar__version">SQL engine tutorial · 0.1<br>Zero dependencies · works offline</p>
+    </div>
+  </aside>
+  <div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
+
+  <main id="main" class="layout">
+    <div class="content-column">
+      <article class="prose">
+  <header class="chapter-head">
+    <p class="chapter-kicker">Appendix / Syntax reference</p>
+    <h1>SQL syntax and function reference</h1>
+    <p class="chapter-lead">
+      This reference lists the syntax, functions, error codes, and CLI commands that the engine in this
+      tutorial supports. If you add features of your own, remember to come back and update this page.
+    </p>
+  </header>
+
+  <h2 id="statements">Statements</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Syntax</th><th>Description</th><th>Chapter</th></tr></thead>
+      <tbody>
+        <tr><td><code>CREATE TABLE [IF NOT EXISTS] t (column ...)</code></td><td>Create a table</td><td>3 / 5</td></tr>
+        <tr><td><code>DROP TABLE [IF EXISTS] t</code></td><td>Drop a table</td><td>6</td></tr>
+        <tr><td><code>INSERT INTO t [(column...)] VALUES (...), (...)</code></td><td>Insert one or more rows</td><td>6</td></tr>
+        <tr><td><code>SELECT ...</code></td><td>Query</td><td>6 / 7 / 9</td></tr>
+        <tr><td><code>UPDATE t SET column = value, ... [WHERE ...]</code></td><td>Update rows</td><td>8</td></tr>
+        <tr><td><code>DELETE FROM t [WHERE ...]</code></td><td>Delete rows</td><td>8</td></tr>
+        <tr><td><code>BEGIN [TRANSACTION]</code></td><td>Start a transaction</td><td>10</td></tr>
+        <tr><td><code>COMMIT</code></td><td>Commit the transaction</td><td>10</td></tr>
+        <tr><td><code>ROLLBACK</code></td><td>Roll back the transaction</td><td>10</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="select">Full SELECT syntax</h2>
+  <pre class="code"><code>SELECT [DISTINCT] expression [AS alias], ...
+ [FROM table [AS alias]
+       [ [INNER | LEFT [OUTER]] JOIN table [AS alias] ON condition ] ...]
+ [WHERE condition]
+ [GROUP BY expression, ...]
+ [HAVING condition]
+ [ORDER BY expression [ASC | DESC], ...]
+ [LIMIT n [OFFSET m]]</code></pre>
+  <p>MySQL's <code>LIMIT offset, count</code> form is supported as well.</p>
+
+  <h2 id="columns">Column types and constraints</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Type</th><th>Affinity</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><code>INTEGER</code> / <code>INT</code> / <code>BIGINT</code></td><td>INTEGER</td><td><code>id INTEGER</code></td></tr>
+        <tr><td><code>REAL</code> / <code>DOUBLE</code> / <code>FLOAT</code> / <code>NUMERIC</code> / <code>DECIMAL</code></td><td>REAL</td><td><code>price REAL</code></td></tr>
+        <tr><td><code>TEXT</code> / <code>VARCHAR(n)</code> / <code>CHAR(n)</code></td><td>TEXT</td><td><code>title TEXT</code></td></tr>
+        <tr><td><code>BOOLEAN</code> / <code>BOOL</code></td><td>BOOLEAN</td><td><code>done BOOLEAN</code></td></tr>
+        <tr><td><code>BLOB</code></td><td>BLOB</td><td>not handled specially for now</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Column constraints: <code>PRIMARY KEY</code>, <code>NOT NULL</code>, <code>UNIQUE</code>, <code>DEFAULT constant</code>.
+  Table-level constraints are supported too: <code>PRIMARY KEY (a, b)</code>, <code>UNIQUE (a, b)</code>.</p>
+
+  <h2 id="operators">Operators and precedence</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Precedence (low → high)</th><th>Operators</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><code>OR</code></td></tr>
+        <tr><td>2</td><td><code>AND</code></td></tr>
+        <tr><td>3</td><td><code>NOT</code></td></tr>
+        <tr><td>4</td><td><code>=</code> <code>==</code> <code>!=</code> <code>&lt;&gt;</code> <code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code>, <code>IS [NOT] NULL</code>, <code>[NOT] LIKE</code>, <code>[NOT] IN</code>, <code>[NOT] BETWEEN</code></td></tr>
+        <tr><td>5</td><td><code>||</code></td></tr>
+        <tr><td>6</td><td><code>+</code> <code>-</code></td></tr>
+        <tr><td>7</td><td><code>*</code> <code>/</code> <code>%</code></td></tr>
+        <tr><td>8</td><td>unary <code>-</code> <code>+</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="functions">Functions</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Function</th><th>Description</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><code>COUNT(*)</code></td><td>number of rows</td><td><code>COUNT(*)</code></td></tr>
+        <tr><td><code>COUNT(x)</code> / <code>COUNT(DISTINCT x)</code></td><td>count of non-NULL values / count after deduplication</td><td><code>COUNT(DISTINCT author)</code></td></tr>
+        <tr><td><code>SUM(x)</code> / <code>AVG(x)</code></td><td>sum / average</td><td><code>SUM(price)</code></td></tr>
+        <tr><td><code>MIN(x)</code> / <code>MAX(x)</code></td><td>minimum / maximum</td><td><code>MAX(price)</code></td></tr>
+        <tr><td><code>UPPER(x)</code> / <code>LOWER(x)</code></td><td>case conversion</td><td><code>UPPER(name)</code></td></tr>
+        <tr><td><code>LENGTH(x)</code></td><td>string length</td><td><code>LENGTH(title)</code></td></tr>
+        <tr><td><code>TRIM(x)</code></td><td>strip leading and trailing whitespace</td><td><code>TRIM(name)</code></td></tr>
+        <tr><td><code>ABS(x)</code> / <code>ROUND(x, n)</code></td><td>absolute value / rounding</td><td><code>ROUND(price, 1)</code></td></tr>
+        <tr><td><code>COALESCE(a, b, ...)</code></td><td>first non-NULL value</td><td><code>COALESCE(nickname, name)</code></td></tr>
+        <tr><td><code>IFNULL(a, b)</code></td><td>use b if a is NULL</td><td><code>IFNULL(price, 0)</code></td></tr>
+        <tr><td><code>TYPEOF(x)</code></td><td>the value's type name</td><td><code>TYPEOF(price)</code></td></tr>
+        <tr><td><code>REPLACE(s, a, b)</code></td><td>string replacement</td><td><code>REPLACE(title, ' ', '-')</code></td></tr>
+        <tr><td><code>SUBSTR(s, start [, len])</code></td><td>substring (1-based)</td><td><code>SUBSTR(title, 1, 3)</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="errors">Error codes</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>SYNTAX_ERROR</code></td><td>Syntax error; <code>position</code> points at the offending location</td></tr>
+        <tr><td><code>SCHEMA_ERROR</code></td><td>Table or column doesn't exist, duplicate creation, bad constraint definition</td></tr>
+        <tr><td><code>UNKNOWN_COLUMN</code></td><td>Column not found; <code>hint</code> lists the available columns</td></tr>
+        <tr><td><code>AMBIGUOUS_COLUMN</code></td><td>Column name is ambiguous after a JOIN; add an alias</td></tr>
+        <tr><td><code>CONSTRAINT_ERROR</code></td><td>NOT NULL / UNIQUE / PRIMARY KEY violation</td></tr>
+        <tr><td><code>EXECUTION_ERROR</code></td><td>Type or function argument error</td></tr>
+        <tr><td><code>TRANSACTION_ERROR</code></td><td>Bad transaction state (BEGIN twice, COMMIT with no transaction)</td></tr>
+        <tr><td><code>NOT_SUPPORTED</code></td><td>Feature not implemented yet</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="cli">CLI commands</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Command</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>node bin/sql.js [file.db]</code></td><td>Open (or create) a database; uses memory when omitted</td></tr>
+        <tr><td><code>.help</code></td><td>Show command help</td></tr>
+        <tr><td><code>.tables</code></td><td>List all tables</td></tr>
+        <tr><td><code>.schema [table]</code></td><td>Show a table's schema</td></tr>
+        <tr><td><code>.mode table|json</code></td><td>Switch output format</td></tr>
+        <tr><td><code>.tokens &lt;SQL&gt;</code></td><td>Show tokens (for debugging)</td></tr>
+        <tr><td><code>.ast &lt;SQL&gt;</code></td><td>Show the syntax tree (for debugging)</td></tr>
+        <tr><td><code>.open &lt;file&gt;</code></td><td>Open another database file</td></tr>
+        <tr><td><code>.read &lt;file&gt;</code></td><td>Execute the SQL in a file</td></tr>
+        <tr><td><code>.exit</code> / <code>.quit</code></td><td>Quit</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="limits">Known limitations</h2>
+  <ul>
+    <li>No subqueries, <code>UNION</code>, <code>ALTER TABLE</code>, or window functions.</li>
+    <li><code>RIGHT JOIN</code> / <code>FULL JOIN</code> / <code>USING</code> / <code>NATURAL JOIN</code> are not implemented.</li>
+    <li>No indexes, so every query is a linear scan (JOIN is O(n×m)).</li>
+    <li>Single process; no locks or concurrency control.</li>
+    <li>Every commit rewrites all tables, which gets slow as the data grows.</li>
+  </ul>
+
+  <h2 id="next">Further exercises</h2>
+  <ol>
+    <li>Add indexes: start with a hash index on the primary key, then take on the B+tree.</li>
+    <li>Add <code>EXPLAIN</code>: print how a query will execute.</li>
+    <li>Add <code>VACUUM</code>: rewrite the file and reclaim free pages.</li>
+    <li>Package the core as an npm package, or build a web-based database editor.</li>
+  </ol>
+</article>
+
+
+      <footer class="chapter-foot site-chapter-foot">
+        <div class="chapter-foot__inner">
+          <p class="chapter-foot__label">Finished this chapter? Mark it complete and the progress stays in this browser.</p>
+          <button id="mark-complete" class="btn btn--complete" type="button"
+                  data-chapter="" aria-pressed="false">Mark chapter complete</button>
+        </div>
+        <nav class="pager" aria-label="Previous and next chapter">
+          <a class="pager-link pager-link--prev" href="chapters/ch10.html"><span class="pager-link__meta">Previous chapter</span><span class="pager-link__title">Chapter 10 · Persistence and transactions</span></a>
+          
+        </nav>
+      </footer>
+    </div>
+    <aside id="page-toc" class="page-toc" aria-label="On this page"></aside>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <p><strong>Build a SQL Database Engine from Scratch</strong> — ten chapters that start with a single character and end with a database that persists, queries, and transacts.</p>
+        <p class="footer-mono">Zero dependencies · Node.js only · built by hand</p>
+      </div>
+      <div>
+        <p class="footer-mono"><a href="playground.html">SQL Playground</a> · <a href="reference.html">Syntax Reference</a> · <a href="index.html">Home</a></p>
+        <p class="footer-mono">Switch between light and dark themes in the top-right corner.</p>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="search-overlay" role="dialog" aria-modal="true" aria-label="Search chapters" aria-hidden="true">
+    <div class="search-panel">
+      <div class="search-panel__head">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.4"/>
+          <path d="M10.4 10.4 14 14" stroke-linecap="round"/>
+        </svg>
+        <input id="search-input" type="search" placeholder="Search chapter titles or summaries…"
+               autocomplete="off" spellcheck="false" aria-label="Search chapters">
+        <span class="search-panel__esc">Esc</span>
+      </div>
+      <ul class="search-results" id="search-results"></ul>
+      <div class="search-panel__foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> select</span>
+        <span><kbd>Enter</kbd> open</span>
+        <span><kbd>/</kbd> open search</span>
+        <span><kbd>[</kbd><kbd>]</kbd> previous / next chapter</span>
+      </div>
+    </div>
+  </div>
+
+  <noscript>
+    <p style="max-width:74ch;margin:1rem auto;padding:0 1rem;font-family:monospace;color:#6e675c">
+      The main content of this site is readable without JavaScript; search, theme switching, and progress tracking need it enabled.
+    </p>
+  </noscript>
+</body>
+</html>
